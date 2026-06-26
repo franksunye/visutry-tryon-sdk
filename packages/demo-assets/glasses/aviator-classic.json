@@ -1,0 +1,51 @@
+{
+  "id": "aviator-classic",
+  "name": "Classic Aviator",
+  "modelUrl": "https://cdn.visutry.com/demo/glasses/aviator-classic.glb",
+  "thumbnailUrl": "https://cdn.visutry.com/demo/glasses/aviator-classic.png",
+  "format": "glb",
+  "coordinateSystem": {
+    "unit": "millimeter",
+    "forwardAxis": "+z",
+    "upAxis": "+y"
+  },
+  "dimensions": {
+    "frameWidthMm": 142,
+    "lensWidthMm": 58,
+    "lensHeightMm": 50,
+    "bridgeWidthMm": 14,
+    "templeLengthMm": 140
+  },
+  "anchors": {
+    "origin": { "x": 0, "y": 0, "z": 0 },
+    "noseBridge": { "x": 0, "y": 0, "z": 0 },
+    "leftHinge": { "x": -71, "y": 0, "z": 0 },
+    "rightHinge": { "x": 71, "y": 0, "z": 0 }
+  },
+  "fitting": {
+    "defaultScale": 1.0,
+    "defaultOffset": { "x": 0, "y": 0.005, "z": 0.01 },
+    "defaultRotation": { "x": 0, "y": 0, "z": 0 },
+    "minScale": 0.6,
+    "maxScale": 1.8,
+    "fitBy": "eyeOuterDistance",
+    "verticalAnchor": "noseBridge"
+  },
+  "material": {
+    "frameColor": "#B87333",
+    "frameMaterial": "metal",
+    "frameRoughness": 0.35,
+    "frameMetalness": 0.8,
+    "lensColor": "#1a1a2e",
+    "lensOpacity": 0.45,
+    "supportsTransparency": true
+  },
+  "metadata": {
+    "brand": "VisuTry Demo",
+    "shapeCategory": "aviator",
+    "colors": ["#B87333"],
+    "tags": ["aviator", "metal", "classic", "unisex"],
+    "price": 299,
+    "currency": "CNY"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "@visutry/demo-assets",
+  "version": "1.0.0-beta.0",
+  "description": "Demo glasses manifests, model specs, and sample assets for VisuTry SDK",
+  "type": "module",
+  "files": [
+    "glasses",
+    "images"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

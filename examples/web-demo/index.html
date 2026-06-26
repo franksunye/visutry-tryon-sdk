@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; connect-src 'self' https://cdn.jsdelivr.net https://storage.googleapis.com https://cdn.visutry.com; worker-src 'self' blob:;" />
+  <title>VisuTry - AR Glasses Try-On Demo</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <!-- App Container -->
+  <div id="app">
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="overlay">
+      <div class="loading-content">
+        <div class="spinner"></div>
+        <p id="loading-text">Initializing VisuTry SDK...</p>
+      </div>
+    </div>
+
+    <!-- Camera Stage: video + canvas overlay -->
+    <div id="stage">
+      <video id="camera-video" autoplay playsinline muted aria-label="Camera view with AR glasses overlay"></video>
+      <canvas id="tryon-canvas"></canvas>
+
+      <!-- Top Bar: Performance Stats -->
+      <div id="top-bar" class="top-bar">
+        <div class="stat-pill" aria-label="Frames per second">
+          <span class="stat-label">FPS</span>
+          <span id="stat-fps" class="stat-value">0</span>
+        </div>
+        <div class="stat-pill" aria-label="Face detection latency">
+          <span class="stat-label">Detect</span>
+          <span id="stat-detect" class="stat-value">0ms</span>
+        </div>
+        <div class="stat-pill" aria-label="Render latency">
+          <span class="stat-label">Render</span>
+          <span id="stat-render" class="stat-value">0ms</span>
+        </div>
+        <div class="stat-pill" id="tracking-status" aria-label="Face tracking status" aria-live="polite">
+          <span class="stat-dot" id="tracking-dot"></span>
+          <span id="tracking-text">Idle</span>
+        </div>
+      </div>
+
+      <!-- Face Detection Hint -->
+      <div id="face-hint" class="face-hint hidden" aria-live="polite">
+        <span>No face detected. Please position your face in the camera.</span>
+      </div>
+    </div>
+
+    <!-- Bottom Panel: Glasses Selector + Actions -->
+    <div id="bottom-panel" class="bottom-panel">
+      <!-- Glasses Selector -->
+      <div class="glasses-selector">
+        <div id="glasses-list" class="glasses-list">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <!-- Selected Glasses Info -->
+      <div id="glasses-info" class="glasses-info hidden">
+        <span id="glasses-name" class="glasses-name"></span>
+        <span id="glasses-price" class="glasses-price"></span>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="action-buttons">
+        <button id="btn-analyze" class="action-btn" title="Analyze Face Shape" aria-label="Analyze face shape">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 6v6l4 2"/>
+          </svg>
+          <span>Analyze</span>
+        </button>
+        <button id="btn-snapshot" class="action-btn" title="Take Snapshot" aria-label="Take snapshot">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+            <circle cx="12" cy="13" r="4"/>
+          </svg>
+          <span>Snapshot</span>
+        </button>
+        <button id="btn-switch-camera" class="action-btn" title="Switch Camera" aria-label="Switch camera">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M23 4v6h-6"/>
+            <path d="M1 20v-6h6"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"/>
+            <path d="M20.49 15a9 9 0 0 1-14.85 3.36L1 14"/>
+          </svg>
+          <span>Flip</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Face Shape Result Modal -->
+    <div id="shape-modal" class="modal hidden" aria-modal="true" role="dialog" aria-labelledby="shape-modal-title">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 id="shape-modal-title">Face Shape Analysis</h2>
+          <button id="modal-close" class="modal-close" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div id="shape-primary" class="shape-primary">
+            <div class="shape-icon" id="shape-icon"></div>
+            <div class="shape-details">
+              <span class="shape-label">Primary Shape</span>
+              <span id="shape-name" class="shape-name">—</span>
+              <span id="shape-confidence" class="shape-confidence">Confidence: —</span>
+            </div>
+          </div>
+          <div id="shape-candidates" class="shape-candidates">
+            <!-- Populated by JS -->
+          </div>
+          <div class="shape-metrics">
+            <h3>Geometric Metrics</h3>
+            <div id="metrics-grid" class="metrics-grid">
+              <!-- Populated by JS -->
+            </div>
+          </div>
+          <div id="shape-warnings" class="shape-warnings hidden">
+            <h3>Quality Warnings</h3>
+            <ul id="warnings-list"></ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container" class="toast-container" aria-live="polite"></div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

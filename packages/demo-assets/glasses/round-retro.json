@@ -1,0 +1,51 @@
+{
+  "id": "round-retro",
+  "name": "Round Retro",
+  "modelUrl": "https://cdn.visutry.com/demo/glasses/round-retro.glb",
+  "thumbnailUrl": "https://cdn.visutry.com/demo/glasses/round-retro.png",
+  "format": "glb",
+  "coordinateSystem": {
+    "unit": "millimeter",
+    "forwardAxis": "+z",
+    "upAxis": "+y"
+  },
+  "dimensions": {
+    "frameWidthMm": 138,
+    "lensWidthMm": 48,
+    "lensHeightMm": 48,
+    "bridgeWidthMm": 22,
+    "templeLengthMm": 145
+  },
+  "anchors": {
+    "origin": { "x": 0, "y": 0, "z": 0 },
+    "noseBridge": { "x": 0, "y": 0, "z": 0 },
+    "leftHinge": { "x": -69, "y": 0, "z": 0 },
+    "rightHinge": { "x": 69, "y": 0, "z": 0 }
+  },
+  "fitting": {
+    "defaultScale": 1.0,
+    "defaultOffset": { "x": 0, "y": 0, "z": 0.008 },
+    "defaultRotation": { "x": 0, "y": 0, "z": 0 },
+    "minScale": 0.6,
+    "maxScale": 1.8,
+    "fitBy": "eyeOuterDistance",
+    "verticalAnchor": "noseBridge"
+  },
+  "material": {
+    "frameColor": "#2C3E50",
+    "frameMaterial": "acetate",
+    "frameRoughness": 0.5,
+    "frameMetalness": 0.0,
+    "lensColor": "#2c3e50",
+    "lensOpacity": 0.35,
+    "supportsTransparency": true
+  },
+  "metadata": {
+    "brand": "VisuTry Demo",
+    "shapeCategory": "round",
+    "colors": ["#2C3E50"],
+    "tags": ["round", "acetate", "retro", "unisex"],
+    "price": 259,
+    "currency": "CNY"
+  }
+}
