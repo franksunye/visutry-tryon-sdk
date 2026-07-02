@@ -18,10 +18,21 @@
     "try-on",
     "glasses",
     "face",
+    "face-shape",
+    "face-analysis",
+    "landmark",
     "mediapipe",
     "threejs",
+    "webgl",
+    "computer-vision",
+    "augmented-reality",
+    "virtual-tryon",
+    "on-device",
+    "privacy",
     "weixin",
-    "miniprogram"
+    "miniprogram",
+    "typescript",
+    "sdk"
   ],
   "engines": {
     "node": ">=20.0.0",

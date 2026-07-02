@@ -3,7 +3,15 @@
 [![CI](https://github.com/franksunye/visutry-tryon-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/franksunye/visutry-tryon-sdk/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D20-green.svg)](https://nodejs.org/)
+[![pnpm](https://img.shields.io/badge/pnpm-10-orange.svg)](https://pnpm.io/)
 [![Tests](https://img.shields.io/badge/tests-368%20passed-brightgreen.svg)](#testing)
+[![Coverage](https://img.shields.io/badge/coverage-%3E80%25-brightgreen.svg)](#testing)
+[![MediaPipe](https://img.shields.io/badge/MediaPipe-FaceLandmarker-orange.svg)](https://developers.google.com/mediapipe)
+[![Three.js](https://img.shields.io/badge/Three.js-0.170-black.svg)](https://threejs.org/)
+[![Platform](https://img.shields.io/badge/platform-H5%20%7C%20WeChat-blue.svg)](#package-structure)
+[![Privacy](https://img.shields.io/badge/privacy-on--device-success.svg)](docs/privacy.md)
+[![Code Style](https://img.shields.io/badge/code%20style-prettier-ff69b4.svg)](https://prettier.io/)
 
 On-device face geometry analysis and AR glasses try-on SDK for **web (H5)** and **WeChat Mini Program**. All face processing happens locally — no images or landmarks are sent to a server.
 
