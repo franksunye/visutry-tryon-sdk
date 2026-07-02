@@ -67,6 +67,18 @@ export interface FaceSemanticPoints {
 
   leftJaw?: Point3D;
   rightJaw?: Point3D;
+
+  /** Face outline widest points (visutry addition). */
+  leftFace?: Point3D;
+  rightFace?: Point3D;
+
+  /** Forehead width points (visutry addition). */
+  leftForehead?: Point3D;
+  rightForehead?: Point3D;
+
+  /** Nose wing points for nose bridge width (visutry addition). */
+  noseLeft?: Point3D;
+  noseRight?: Point3D;
 }
 
 // ---------------------------------------------------------------------------
@@ -93,7 +105,10 @@ export type FaceQualityWarning =
   | "LOW_LIGHT"
   | "OCCLUDED"
   | "UNSTABLE"
-  | "MISSING_KEY_POINTS";
+  | "MISSING_KEY_POINTS"
+  | "EXCESSIVE_TILT"
+  | "ASYMMETRIC_FACE"
+  | "MULTIPLE_FACES";
 
 export interface FaceQuality {
   confidence: number;
@@ -352,13 +367,21 @@ export interface FaceMetrics {
   cheekboneWidth: number;
   jawWidth: number;
   foreheadWidth?: number;
+  faceOutlineWidth?: number;
   eyeOuterDistance: number;
   eyeInnerDistance: number;
   eyeCenterDistance: number;
   noseBridgeToEyeLine: number;
+  noseBridgeWidth?: number;
   widthHeightRatio: number;
   jawCheekRatio: number;
   foreheadCheekRatio?: number;
+  /** Eye line tilt in degrees (0 = level). Positive = right higher. */
+  eyeLineTiltDeg?: number;
+  /** Symmetry offset: nose bridge deviation from face center (0..1, 0 = perfect). */
+  symmetryOffset?: number;
+  /** Face span: max(width, height) of bounding box in normalized coords. */
+  faceSpan?: number;
   chinType: "pointed" | "rounded" | "square" | "unknown";
   measurementQuality: number;
 }
@@ -382,6 +405,7 @@ export type FaceShape =
   | "heart"
   | "diamond"
   | "oblong"
+  | "triangle"
   | "unknown";
 
 export interface FaceShapeCandidate {
@@ -533,6 +557,7 @@ export interface VisuTrySDK {
   loadGlasses(asset: GlassesAssetManifest): Promise<void>;
   switchGlasses(asset: GlassesAssetManifest): Promise<void>;
   analyzeFaceShape(input?: FaceAnalysisInput): Promise<FaceShapeResult>;
+  analyzeFaceShapeFromImage(image: unknown): Promise<FaceShapeResult>;
   snapshot(options?: SnapshotOptions): Promise<SnapshotResult>;
   on<EventName extends keyof VisuTrySDKEvents>(
     eventName: EventName,

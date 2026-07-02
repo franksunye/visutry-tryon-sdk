@@ -18,6 +18,10 @@ export default defineConfig({
     target: "es2020",
     chunkSizeWarningLimit: 600,
     rollupOptions: {
+      input: {
+        main: resolve(__dirname, "index.html"),
+        "face-analysis": resolve(__dirname, "face-analysis.html"),
+      },
       output: {
         manualChunks: {
           "three-vendor": ["three"],

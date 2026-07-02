@@ -107,6 +107,14 @@ export class QualityGate {
       warnings.push("OCCLUDED");
     }
 
+    // --- visutry additions: photo quality checks (analysis mode only) ----
+    if (mode === "analysis") {
+      const photoWarnings = this.checkPhotoQuality(sem);
+      for (const w of photoWarnings) {
+        if (!warnings.includes(w)) warnings.push(w);
+      }
+    }
+
     // --- Snapshot-specific: faceVisible ----------------------------------
     if (mode === "snapshot" && !face.quality.faceVisible) {
       warnings.push("LOW_CONFIDENCE");
@@ -116,6 +124,53 @@ export class QualityGate {
     const passed = warnings.length === 0 && face.quality.faceVisible;
 
     return { passed, score, warnings };
+  }
+
+  /**
+   * Photo quality checks adapted from visutry: eye line tilt, facial symmetry,
+   * and face span. These help reject poor-quality selfies before analysis.
+   */
+  private checkPhotoQuality(sem: FaceSemanticPoints): FaceQualityWarning[] {
+    const warnings: FaceQualityWarning[] = [];
+    const MAX_TILT_DEG = 15;
+    const MAX_SYMMETRY_OFFSET = 0.14;
+    const MIN_FACE_SPAN = 0.16;
+
+    // Eye line tilt
+    if (sem.leftEyeOuter && sem.rightEyeOuter) {
+      const dx = sem.rightEyeOuter.x - sem.leftEyeOuter.x;
+      const dy = sem.rightEyeOuter.y - sem.leftEyeOuter.y;
+      if (Math.abs(dx) > 1e-6) {
+        const tiltDeg = Math.abs(Math.atan2(dy, dx) * (180 / Math.PI));
+        if (tiltDeg > MAX_TILT_DEG) {
+          warnings.push("EXCESSIVE_TILT");
+        }
+      }
+    }
+
+    // Symmetry offset: nose bridge deviation from face center
+    if (sem.noseBridge && sem.leftFace && sem.rightFace) {
+      const faceWidth = Math.abs(sem.rightFace.x - sem.leftFace.x);
+      if (faceWidth > 1e-6) {
+        const faceCenterX = (sem.leftFace.x + sem.rightFace.x) / 2;
+        const offset = Math.abs(sem.noseBridge.x - faceCenterX) / faceWidth;
+        if (offset > MAX_SYMMETRY_OFFSET) {
+          warnings.push("ASYMMETRIC_FACE");
+        }
+      }
+    }
+
+    // Face span: bounding box max dimension
+    if (sem.leftFace && sem.rightFace && sem.foreheadCenter && sem.chin) {
+      const w = Math.abs(sem.rightFace.x - sem.leftFace.x);
+      const h = Math.abs(sem.chin.y - sem.foreheadCenter.y);
+      const span = Math.max(w, h);
+      if (span < MIN_FACE_SPAN) {
+        warnings.push("FACE_TOO_SMALL");
+      }
+    }
+
+    return warnings;
   }
 
   /**

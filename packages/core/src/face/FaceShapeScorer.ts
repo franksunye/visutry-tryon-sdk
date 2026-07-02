@@ -8,7 +8,7 @@ import type {
 import { FaceMetricsCalculator } from "./FaceMetricsCalculator.js";
 import { clamp01, softmax } from "../utils/math.js";
 
-export const FACE_SHAPE_SCORER_VERSION = "1.0.0";
+export const FACE_SHAPE_SCORER_VERSION = "1.1.0";
 
 /** Gaussian membership: 1 at `center`, falls off with `sigma`. */
 function bell(value: number, center: number, sigma: number): number {
@@ -33,6 +33,8 @@ interface ShapeScoreContext {
   jawToEyeOuter: number;
   /** eyeOuterDistance / cheekboneWidth — <1 => cheekbone wider than eye span. */
   eyeOuterToCheek: number;
+  /** foreheadWidth / cheekboneWidth — low => forehead narrower (diamond/triangle). */
+  fcr: number | undefined;
 }
 
 function buildContext(m: FaceMetrics): ShapeScoreContext {
@@ -44,6 +46,7 @@ function buildContext(m: FaceMetrics): ShapeScoreContext {
     chinType: m.chinType,
     jawToEyeOuter: (m.jawWidth || 0) / eyeOuter,
     eyeOuterToCheek: eyeOuter / cheek,
+    fcr: m.foreheadCheekRatio,
   };
 }
 
@@ -145,6 +148,7 @@ export class FaceShapeScorer {
       this.scoreHeart(ctx),
       this.scoreDiamond(ctx),
       this.scoreOblong(ctx),
+      this.scoreTriangle(ctx),
     ];
   }
 
@@ -201,16 +205,21 @@ export class FaceShapeScorer {
 
   /** heart: upper face wider, jaw narrows, pointed chin. */
   private scoreHeart(ctx: ShapeScoreContext): { shape: FaceShape; score: number; reasons: string[] } {
+    // Use foreheadCheekRatio when available for more precise classification.
+    // Heart: forehead ≥ cheek (fcr high) + jaw narrows (jcr low).
+    const fcrScore = ctx.fcr !== undefined ? bell(ctx.fcr, 0.92, 0.07) : 0.5;
     const taperScore = bell(ctx.jawToEyeOuter, 0.58, 0.08); // jaw much narrower than eye span
     const jcrScore = bell(ctx.jcr, 0.58, 0.08);
     const chinScore = chinBonus(ctx.chinType, ["pointed"]);
-    const score = taperScore * 0.4 + jcrScore * 0.3 + chinScore * 0.3;
+    const score = (ctx.fcr !== undefined ? fcrScore * 0.2 + taperScore * 0.2 : taperScore * 0.4)
+      + jcrScore * 0.3 + chinScore * 0.3;
     return {
       shape: "heart",
       score,
       reasons: [
         `jaw/eyeOuter ${ctx.jawToEyeOuter.toFixed(2)} (upper wider)`,
         `jaw/cheek ${ctx.jcr.toFixed(2)} (narrowing)`,
+        ctx.fcr !== undefined ? `forehead/cheek ${ctx.fcr.toFixed(2)} (broad forehead)` : `chin ${ctx.chinType}`,
         `chin ${ctx.chinType}`,
       ],
     };
@@ -218,16 +227,20 @@ export class FaceShapeScorer {
 
   /** diamond: cheekbone widest, forehead & jaw narrower, pointed chin. */
   private scoreDiamond(ctx: ShapeScoreContext): { shape: FaceShape; score: number; reasons: string[] } {
+    // Use foreheadCheekRatio when available: diamond has narrow forehead (fcr low).
+    const fcrScore = ctx.fcr !== undefined ? bell(ctx.fcr, 0.78, 0.06) : 0.5;
     const cheekDominant = bell(ctx.eyeOuterToCheek, 0.7, 0.08); // eye span < cheek
     const jcrScore = bell(ctx.jcr, 0.64, 0.08); // jaw narrower than cheek
     const chinScore = chinBonus(ctx.chinType, ["pointed"]);
-    const score = cheekDominant * 0.4 + jcrScore * 0.3 + chinScore * 0.3;
+    const score = (ctx.fcr !== undefined ? fcrScore * 0.2 + cheekDominant * 0.2 : cheekDominant * 0.4)
+      + jcrScore * 0.3 + chinScore * 0.3;
     return {
       shape: "diamond",
       score,
       reasons: [
         `eyeOuter/cheek ${ctx.eyeOuterToCheek.toFixed(2)} (cheekbone widest)`,
         `jaw/cheek ${ctx.jcr.toFixed(2)} (narrow)`,
+        ctx.fcr !== undefined ? `forehead/cheek ${ctx.fcr.toFixed(2)} (narrow forehead)` : `chin ${ctx.chinType}`,
         `chin ${ctx.chinType}`,
       ],
     };
@@ -244,6 +257,25 @@ export class FaceShapeScorer {
       reasons: [
         `width/height ${ctx.whr.toFixed(2)} (elongated)`,
         `jaw/cheek ${ctx.jcr.toFixed(2)} (uniform widths)`,
+      ],
+    };
+  }
+
+  /** triangle: jaw wider than cheek, forehead narrower, broad chin. */
+  private scoreTriangle(ctx: ShapeScoreContext): { shape: FaceShape; score: number; reasons: string[] } {
+    // Triangle: jaw ≥ cheek (jcr high) + forehead < cheek (fcr low).
+    const jcrScore = trap(ctx.jcr, 0.95, 1.15, 0.05);
+    const fcrScore = ctx.fcr !== undefined ? bell(ctx.fcr, 0.82, 0.06) : 0.5;
+    const chinScore = chinBonus(ctx.chinType, ["square", "rounded"]);
+    const score = (ctx.fcr !== undefined ? jcrScore * 0.35 + fcrScore * 0.35 : jcrScore * 0.6)
+      + chinScore * (ctx.fcr !== undefined ? 0.3 : 0.4);
+    return {
+      shape: "triangle",
+      score,
+      reasons: [
+        `jaw/cheek ${ctx.jcr.toFixed(2)} (jaw dominant)`,
+        ctx.fcr !== undefined ? `forehead/cheek ${ctx.fcr.toFixed(2)} (narrow forehead)` : `chin ${ctx.chinType}`,
+        `chin ${ctx.chinType}`,
       ],
     };
   }

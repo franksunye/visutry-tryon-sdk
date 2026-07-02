@@ -76,6 +76,51 @@ export function createVisuTryWebSDK(options: VisuTryWebSDKFactoryOptions): VisuT
   return new VisuTryWebSDKImpl(options);
 }
 
+/**
+ * Create a lightweight SDK instance for **image-only** face shape analysis.
+ * Does NOT require a canvas or Three.js renderer — only loads MediaPipe.
+ *
+ * Usage:
+ * ```ts
+ * const sdk = createVisuTryImageAnalyzer();
+ * const img = new Image();
+ * img.src = 'photo.jpg';
+ * await img.decode();
+ * const result = await sdk.analyzeFaceShapeFromImage(img);
+ * ```
+ */
+export function createVisuTryImageAnalyzer(
+  options?: MediaPipeTrackerOptions,
+): Pick<VisuTrySDK, "analyzeFaceShapeFromImage" | "destroy"> {
+  const tracker = new MediaPipeFaceTracker(options ?? {}, { mode: "balanced" });
+  const scorer = new FaceShapeScorer();
+  const qualityGate = new QualityGate();
+  let destroyed = false;
+
+  return {
+    async analyzeFaceShapeFromImage(image: unknown): Promise<FaceShapeResult> {
+      if (destroyed) {
+        throw createSDKError("UNKNOWN", "Image analyzer has been destroyed");
+      }
+      const face = await tracker.detectImage(image);
+      if (!face) {
+        throw createSDKError("UNKNOWN", "No face detected in the provided image");
+      }
+      const gate = qualityGate.evaluate({ face, mode: "analysis" });
+      const result = scorer.scoreFrames([face]);
+      if (gate.warnings.length > 0) {
+        const merged = [...new Set([...result.warnings, ...gate.warnings])];
+        return { ...result, warnings: merged };
+      }
+      return result;
+    },
+    destroy(): void {
+      destroyed = true;
+      tracker.destroy();
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Implementation
 // ---------------------------------------------------------------------------
@@ -291,6 +336,45 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
     } finally {
       this.analysisInProgress = false;
     }
+  }
+
+  /**
+   * Analyze face shape from a single still image (photo upload).
+   * Does NOT require camera or try-on loop — only needs the tracker's
+   * IMAGE-mode detection.
+   *
+   * Accepts: HTMLImageElement, HTMLCanvasElement, ImageBitmap, or HTMLVideoElement.
+   * For File/Blob inputs, callers should first load them into an Image.
+   */
+  async analyzeFaceShapeFromImage(image: unknown): Promise<FaceShapeResult> {
+    this.assertNotDestroyed();
+
+    // Ensure tracker is initialized (loads MediaPipe wasm + model).
+    // detectImage will lazily create the IMAGE-mode landmarker.
+    if (!this.tracker) {
+      throw createSDKError("TRACKER_INIT_FAILED", t("error.tracker_not_initialized"));
+    }
+
+    const face = await this.tracker.detectImage(image);
+    if (!face) {
+      throw createSDKError("UNKNOWN", "No face detected in the provided image");
+    }
+
+    // Run quality gate in analysis mode.
+    const gate = this.qualityGate.evaluate({ face, mode: "analysis" });
+
+    // Score from a single frame — the scorer handles single-frame input
+    // by scoring from the face's semantic points directly.
+    const result = this.scorer.scoreFrames([face]);
+
+    // If quality gate produced warnings, append them to the result.
+    if (gate.warnings.length > 0) {
+      const merged = [...new Set([...result.warnings, ...gate.warnings])];
+      return { ...result, warnings: merged };
+    }
+
+    this.emit("faceShapeAnalyzed", result);
+    return result;
   }
 
   /**

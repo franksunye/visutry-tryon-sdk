@@ -8,8 +8,8 @@ describe("FaceShapeScorer", () => {
   it("produces a result with candidates and version", () => {
     const face = buildFaceResult(buildSemanticPoints("oval"));
     const result = scorer.score(face);
-    expect(result.candidates.length).toBe(6);
-    expect(result.version).toBe("1.0.0");
+    expect(result.candidates.length).toBe(7);
+    expect(result.version).toBe("1.1.0");
     expect(result.metrics).toBeDefined();
     expect(result.confidence).toBeGreaterThanOrEqual(0);
   });
@@ -73,7 +73,7 @@ describe("FaceShapeScorer", () => {
     const face = buildFaceResult(buildSemanticPoints("oval"));
     const first = scorer.score(face);
     const result = scorer.scoreFromMetrics(first.metrics, []);
-    expect(result.candidates.length).toBe(6);
+    expect(result.candidates.length).toBe(7);
   });
 
   it("scoreFrames aggregates multiple frames", () => {

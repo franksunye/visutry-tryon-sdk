@@ -57,6 +57,7 @@ const TRACKING_MODE_SETTINGS: Record<
  */
 export class MediaPipeFaceTracker implements IFaceTracker {
   private landmarker: FaceLandmarker | null = null;
+  private imageLandmarker: FaceLandmarker | null = null;
   private mapper: FaceSemanticMapper;
   private config: TrackerConfig;
   private options: MediaPipeTrackerOptions;
@@ -152,25 +153,88 @@ export class MediaPipeFaceTracker implements IFaceTracker {
   }
 
   async detectImage(input: unknown): Promise<NormalizedFaceResult | null> {
-    if (!this.landmarker) {
+    if (this.disposed) {
       throw createSDKError("TRACKER_DETECT_FAILED", t("error.tracker_not_initialized"));
     }
-    // Switch temporarily to IMAGE mode is not supported on a VIDEO landmarker;
-    // callers should create a separate IMAGE-mode landmarker for stills. Here
-    // we run detectForVideo on an image-like source if it quacks like a video.
-    const video = input as HTMLVideoElement;
-    if (!video || video.readyState < 2) return null;
-    return this.detect({ __brand: "HTMLVideoElement", el: video } as unknown as FrameInput);
+
+    // Lazily create a separate IMAGE-mode landmarker for still photos.
+    if (!this.imageLandmarker) {
+      await this.initImageLandmarker();
+    }
+    if (!this.imageLandmarker) return null;
+
+    // Accept HTMLImageElement, HTMLCanvasElement, ImageBitmap, or HTMLVideoElement.
+    let imageSource: HTMLImageElement | HTMLCanvasElement | ImageBitmap | HTMLVideoElement;
+    if (input instanceof HTMLImageElement) {
+      imageSource = input;
+    } else if (input instanceof HTMLCanvasElement) {
+      imageSource = input;
+    } else if (typeof ImageBitmap !== "undefined" && input instanceof ImageBitmap) {
+      imageSource = input;
+    } else if (input instanceof HTMLVideoElement) {
+      imageSource = input;
+    } else {
+      throw createSDKError("TRACKER_DETECT_FAILED", "Unsupported image input type for detectImage");
+    }
+
+    let result: FaceLandmarkerResult;
+    try {
+      result = this.imageLandmarker.detect(imageSource);
+    } catch (err) {
+      throw createSDKError("TRACKER_DETECT_FAILED", t("error.tracker_detect_failed"), err);
+    }
+
+    if (!result.faceLandmarks?.length) return null;
+
+    const landmarks = result.faceLandmarks[0];
+    const matrix = result.facialTransformationMatrixes?.[0]?.data;
+    // Use 0 as timestamp for single-image detection (no temporal context needed).
+    return this.buildResult(landmarks, matrix, 0, "mediapipe", imageSource);
+  }
+
+  /**
+   * Lazily create a separate IMAGE-mode FaceLandmarker for still photo analysis.
+   * Uses the same model and CDN paths but with runningMode="IMAGE".
+   */
+  private async initImageLandmarker(): Promise<void> {
+    let vision;
+    try {
+      vision = await FilesetResolver.forVisionTasks(
+        this.options.wasmPath ?? DEFAULT_MEDIAPIPE_WASM,
+      );
+    } catch (err) {
+      throw createSDKError("TRACKER_INIT_FAILED", t("error.tracker_init_failed"), err);
+    }
+
+    const settings = TRACKING_MODE_SETTINGS[this.config.mode];
+    try {
+      this.imageLandmarker = await FaceLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: this.options.modelAssetPath ?? DEFAULT_FACE_LANDMARKER_MODEL,
+          delegate: settings.delegate,
+        },
+        runningMode: "IMAGE",
+        numFaces: 1,
+        minFaceDetectionConfidence: settings.minDetection,
+        minFacePresenceConfidence: settings.minPresence,
+        outputFaceBlendshapes: false,
+        outputFacialTransformationMatrixes: true,
+      });
+    } catch (err) {
+      throw createSDKError("TRACKER_INIT_FAILED", "Failed to init IMAGE-mode landmarker", err);
+    }
   }
 
   destroy(): void {
     this.disposed = true;
     try {
       this.landmarker?.close();
+      this.imageLandmarker?.close();
     } catch (err) {
       console.warn("[VisuTrySDK]", "MediaPipeFaceTracker: error closing landmarker:", err);
     }
     this.landmarker = null;
+    this.imageLandmarker = null;
   }
 
   // -----------------------------------------------------------------------
@@ -180,7 +244,7 @@ export class MediaPipeFaceTracker implements IFaceTracker {
     matrix: number[] | undefined,
     timestamp: number,
     source: FaceResultSource,
-    _video: HTMLVideoElement,
+    _source: unknown,
   ): NormalizedFaceResult {
     const points: Point3D[] = landmarks.map((p) => ({ x: p.x, y: p.y, z: p.z ?? 0 }));
     const semantic = this.mapper.map(points);

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; connect-src 'self' https://cdn.jsdelivr.net https://storage.googleapis.com; worker-src 'self' blob:;" />
+  <title>VisuTry SDK — Face Shape Analysis Demo</title>
+  <link rel="stylesheet" href="/src/face-analysis-demo.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header class="app-header">
+      <h1>VisuTry SDK — Face Shape Analysis</h1>
+      <p class="subtitle">Upload a photo to get a detailed face shape analysis report</p>
+    </header>
+
+    <!-- Upload Section -->
+    <section id="upload-section" class="upload-section">
+      <div id="drop-zone" class="drop-zone">
+        <div class="drop-zone-icon">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+        </div>
+        <p class="drop-zone-text">Click to upload or drag & drop</p>
+        <p class="drop-zone-hint">JPG, PNG — front-facing photo recommended</p>
+        <input type="file" id="file-input" accept="image/*" hidden />
+      </div>
+    </section>
+
+    <!-- Loading Section -->
+    <section id="loading-section" class="loading-section hidden">
+      <div class="spinner"></div>
+      <p id="loading-message">Analyzing face shape...</p>
+    </section>
+
+    <!-- Error Section -->
+    <section id="error-section" class="error-section hidden">
+      <p id="error-message"></p>
+      <button id="retry-btn" class="btn-secondary">Try Another Photo</button>
+    </section>
+
+    <!-- Report Section -->
+    <section id="report-section" class="report-section hidden">
+      <!-- Photo + Primary Result -->
+      <div class="report-card primary-card">
+        <div class="photo-preview">
+          <img id="uploaded-photo" alt="Uploaded photo" />
+        </div>
+        <div class="primary-result">
+          <span class="result-label">Your Face Shape</span>
+          <span id="primary-shape" class="primary-shape">—</span>
+          <div class="confidence-bar-container">
+            <div id="confidence-bar" class="confidence-bar-fill" style="width: 0%"></div>
+          </div>
+          <span id="confidence-text" class="confidence-text">Confidence: —</span>
+        </div>
+      </div>
+
+      <!-- All Candidates -->
+      <div class="report-card">
+        <h2 class="card-title">All Face Shape Candidates</h2>
+        <div id="candidates-list" class="candidates-list"></div>
+      </div>
+
+      <!-- Geometric Metrics -->
+      <div class="report-card">
+        <h2 class="card-title">Geometric Metrics</h2>
+        <div id="metrics-grid" class="metrics-grid"></div>
+      </div>
+
+      <!-- Quality Warnings -->
+      <div id="quality-card" class="report-card hidden">
+        <h2 class="card-title">Quality Assessment</h2>
+        <ul id="quality-list" class="quality-list"></ul>
+      </div>
+
+      <!-- Frame Recommendations -->
+      <div class="report-card">
+        <h2 class="card-title">Frame Recommendations</h2>
+        <div id="recommendations-list" class="recommendations-list"></div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="report-actions">
+        <button id="analyze-another" class="btn-primary">Analyze Another Photo</button>
+      </div>
+    </section>
+
+    <!-- Toast -->
+    <div id="toast" class="toast hidden"></div>
+  </div>
+
+  <script type="module" src="/src/face-analysis-demo.ts"></script>
+</body>
+</html>

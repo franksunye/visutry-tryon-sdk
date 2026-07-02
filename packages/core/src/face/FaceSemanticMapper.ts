@@ -27,6 +27,13 @@ export const MEDIAPIPE_SEMANTIC_INDEX_MAP: SemanticIndexMap = {
   rightCheek: 352,
   leftJaw: 172,
   rightJaw: 397,
+  // visutry additions — used for richer face shape classification
+  leftFace: 234,
+  rightFace: 454,
+  leftForehead: 103,
+  rightForehead: 332,
+  noseLeft: 98,
+  noseRight: 327,
 };
 
 export interface FaceSemanticMapperOptions {

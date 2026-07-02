@@ -22,7 +22,7 @@ export type { MediaPipeTrackerOptions } from "./tracker/MediaPipeFaceTracker.js"
 export { ThreeJsRenderer } from "./renderer/ThreeJsRenderer.js";
 
 // SDK facade
-export { createVisuTryWebSDK } from "./VisuTryWebSDK.js";
+export { createVisuTryWebSDK, createVisuTryImageAnalyzer } from "./VisuTryWebSDK.js";
 export type { VisuTryWebSDKFactoryOptions } from "./VisuTryWebSDK.js";
 
 // Re-export core types and utilities for convenience

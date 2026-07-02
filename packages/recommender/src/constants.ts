@@ -15,6 +15,7 @@ import type { FaceShape, GlassesShape } from "@visutry/tryon-core";
  *  - heart   -> rectangle, aviator, browline      (balance the lower face)
  *  - diamond -> oval, cat-eye, browline           (soften the cheekbones)
  *  - oblong  -> round, oval                        (add width)
+ *  - triangle -> aviator, cat-eye, round           (balance wide jaw)
  *  - unknown -> (none) — the scorer awards every frame a neutral medium weight
  *
  * The table is exposed so callers can render a "why this frame?" explanation or
@@ -29,6 +30,7 @@ export const FACE_SHAPE_FRAME_MATCH: Readonly<
   heart: ["rectangle", "aviator", "browline"],
   diamond: ["oval", "cat-eye", "browline"],
   oblong: ["round", "oval"],
+  triangle: ["aviator", "cat-eye", "round"],
   unknown: [],
 };
 

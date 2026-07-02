@@ -22,9 +22,29 @@ const { mockFaceLandmarker, mockLandmarks } = vi.hoisted(() => {
   landmarks[352] = { x: 0.65, y: 0.52, z: -0.03 };
   landmarks[172] = { x: 0.38, y: 0.63, z: -0.02 };
   landmarks[397] = { x: 0.62, y: 0.63, z: -0.02 };
+  // visutry additions
+  landmarks[234] = { x: 0.30, y: 0.50, z: -0.01 };
+  landmarks[454] = { x: 0.70, y: 0.50, z: -0.01 };
+  landmarks[103] = { x: 0.38, y: 0.36, z: -0.02 };
+  landmarks[332] = { x: 0.62, y: 0.36, z: -0.02 };
+  landmarks[98] = { x: 0.44, y: 0.50, z: -0.03 };
+  landmarks[327] = { x: 0.56, y: 0.50, z: -0.03 };
 
   const landmarker = {
     detectForVideo: vi.fn().mockReturnValue({
+      faceLandmarks: [landmarks],
+      facialTransformationMatrixes: [
+        {
+          data: [
+            1, 0, 0, 0,
+            0, 1, 0, 0,
+            0, 0, 1, 0,
+            0, 0, 0, 1,
+          ],
+        },
+      ],
+    }),
+    detect: vi.fn().mockReturnValue({
       faceLandmarks: [landmarks],
       facialTransformationMatrixes: [
         {
@@ -542,7 +562,7 @@ describe("MediaPipeFaceTracker", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // detectImage — delegation to detect
+  // detectImage — IMAGE-mode single photo analysis
   // ---------------------------------------------------------------------------
 
   it("detectImage throws when not initialized", async () => {
@@ -551,19 +571,21 @@ describe("MediaPipeFaceTracker", () => {
     });
   });
 
-  it("detectImage returns null when video is not ready", async () => {
+  it("detectImage returns null when no face is detected", async () => {
     await tracker.initialize({ mode: "balanced" });
-    const video = document.createElement("video");
-    Object.defineProperty(video, "readyState", { value: 1, configurable: true });
-    const result = await tracker.detectImage(video);
+    // Mock detect to return empty landmarks
+    mockFaceLandmarker.detect.mockReturnValueOnce({ faceLandmarks: [] });
+    const img = new Image();
+    const result = await tracker.detectImage(img);
     expect(result).toBeNull();
   });
 
-  it("detectImage delegates to detect for a ready video", async () => {
+  it("detectImage analyzes an HTMLImageElement and returns a result", async () => {
     await tracker.initialize({ mode: "balanced" });
-    const mockVideo = makeMockVideo();
-    const result = await tracker.detectImage(mockVideo);
+    const img = new Image();
+    const result = await tracker.detectImage(img);
     expect(result).not.toBeNull();
     expect(result!.source).toBe("mediapipe");
+    expect(mockFaceLandmarker.detect).toHaveBeenCalled();
   });
 });
