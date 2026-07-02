@@ -244,7 +244,7 @@ describe("VisuTryWebSDK (facade)", () => {
     expect(result.candidates.length).toBeGreaterThan(0);
     expect(result.confidence).toBeGreaterThanOrEqual(0);
     expect(result.metrics).toBeDefined();
-    expect(result.version).toBe("1.1.0");
+    expect(result.version).toBe("1.2.0");
     expect(analyzedSpy).toHaveBeenCalledWith(result);
   });
 
