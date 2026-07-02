@@ -5,7 +5,7 @@
 
 import { createVisuTryImageAnalyzer } from "@visutry/tryon-web";
 import type { FaceShapeResult } from "@visutry/tryon-core";
-import { analyzeFaceLandmarks, type VisutryGeometryAnalysis } from "./visutry-algorithm";
+import type { VisutryGeometryAnalysis } from "./visutry-algorithm";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string): T => {
   const el = document.getElementById(id);
@@ -128,8 +128,8 @@ async function handleFile(file: File): Promise<void> {
  */
 function runVisutryAlgorithmFromSdkMetrics(
   sdk: FaceShapeResult,
-  imgW: number,
-  imgH: number,
+  _imgW: number,
+  _imgH: number,
 ): VisutryGeometryAnalysis {
   const m = sdk.metrics;
 

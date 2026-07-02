@@ -87,7 +87,6 @@ export function analyzeFaceLandmarks(
   const cheekWidth = dist2D(leftCheek, rightCheek) * sx;
   const jawWidth = dist2D(leftJaw, rightJaw) * sx;
   const foreheadWidth = dist2D(leftForehead, rightForehead) * sx;
-  const eyeOuterDist = dist2D(leftEyeOuter, rightEyeOuter) * sx;
   const noseBridgeWidth = dist2D(noseLeft, noseRight) * sx;
 
   if (faceWidth < 1e-6 || faceHeight < 1e-6) return null;

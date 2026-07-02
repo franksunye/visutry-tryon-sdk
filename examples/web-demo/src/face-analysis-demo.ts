@@ -7,7 +7,7 @@
  */
 
 import { createVisuTryImageAnalyzer, LandmarkOverlay } from "@visutry/tryon-web";
-import type { FaceShapeResult, FaceShape } from "@visutry/tryon-core";
+import type { FaceShapeResult } from "@visutry/tryon-core";
 
 // ---------------------------------------------------------------------------
 // Constants

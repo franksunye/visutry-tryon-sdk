@@ -53,5 +53,12 @@ export default ts.config(
       "no-case-declarations": "off",
     },
   },
+  // Relax rules for test files — mocks commonly use `any`
+  {
+    files: ["**/*.test.ts", "**/*.spec.ts", "**/__testutils__/**", "**/__fixtures__/**"],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off",
+    },
+  },
   prettier,
 );
