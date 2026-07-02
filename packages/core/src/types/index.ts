@@ -384,6 +384,19 @@ export interface FaceMetrics {
   faceSpan?: number;
   chinType: "pointed" | "rounded" | "square" | "unknown";
   measurementQuality: number;
+  /**
+   * visutry-compatible ratios (2D distances, no z-component).
+   * These match the exact computation from visutry's analyzeFaceLandmarks().
+   */
+  visutry?: {
+    faceAspectRatio: number;
+    cheekToFaceWidth: number;
+    jawToCheekWidth: number;
+    foreheadToCheekWidth: number;
+    eyeLineTiltDeg: number;
+    symmetryOffset: number;
+    noseBridgeToFaceWidth: number;
+  };
 }
 
 export interface FaceAnalysisConfig {

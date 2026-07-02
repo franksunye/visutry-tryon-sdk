@@ -9,7 +9,7 @@ describe("FaceShapeScorer", () => {
     const face = buildFaceResult(buildSemanticPoints("oval"));
     const result = scorer.score(face);
     expect(result.candidates.length).toBe(7);
-    expect(result.version).toBe("1.2.0");
+    expect(result.version).toBe("2.0.0");
     expect(result.metrics).toBeDefined();
     expect(result.confidence).toBeGreaterThanOrEqual(0);
   });
@@ -53,7 +53,7 @@ describe("FaceShapeScorer", () => {
   });
 
   it("returns unknown with LOW_CONFIDENCE when confidence is below threshold", () => {
-    // Degraded quality → low measurementQuality → low confidence.
+    // Degraded quality → missing key points → unknown result.
     const sem = buildSemanticPoints("oval");
     delete sem.leftCheek;
     delete sem.rightCheek;
@@ -61,12 +61,18 @@ describe("FaceShapeScorer", () => {
     delete sem.rightJaw;
     delete sem.chin;
     delete sem.foreheadCenter;
+    delete sem.leftFace;
+    delete sem.rightFace;
+    delete sem.leftForehead;
+    delete sem.rightForehead;
+    delete sem.noseLeft;
+    delete sem.noseRight;
     const face = buildFaceResult(sem, {
       quality: { confidence: 0.3, faceVisible: true, frontalScore: 0.3, stabilityScore: 0.3, warnings: [] },
     });
     const result = scorer.score(face);
     expect(result.primary).toBe("unknown");
-    expect(result.warnings).toContain("LOW_CONFIDENCE");
+    expect(result.warnings).toContain("MISSING_KEY_POINTS");
   });
 
   it("scoreFromMetrics works with pre-aggregated metrics", () => {

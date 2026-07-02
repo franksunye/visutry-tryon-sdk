@@ -1,5 +1,5 @@
 import type { FaceMetrics, FaceSemanticPoints, NormalizedFaceResult } from "../types/index.js";
-import { distance3D, median, trimmedMean, clamp01 } from "../utils/math.js";
+import { distance2D, distance3D, median, trimmedMean, clamp01 } from "../utils/math.js";
 
 /**
  * Computes geometric `FaceMetrics` from `FaceSemanticPoints`.
@@ -111,6 +111,11 @@ export class FaceMetricsCalculator {
     // --- Measurement quality ----------------------------------------------
     const measurementQuality = this.computeQuality(present, s);
 
+    // --- visutry-compatible 2D ratios -------------------------------------
+    // visutry uses 2D distances (Math.hypot(dx, dy) with no z-component).
+    // We compute these separately to ensure exact numerical equivalence.
+    const visutry = this.computeVisutryRatios(s);
+
     return {
       faceWidth,
       faceHeight: faceHeight ?? 0,
@@ -131,6 +136,7 @@ export class FaceMetricsCalculator {
       faceSpan,
       chinType,
       measurementQuality,
+      visutry,
     };
   }
 
@@ -195,6 +201,20 @@ export class FaceMetricsCalculator {
     const chinVotes = perFrame.map((m) => m.chinType);
     const chinType = this.majorityVote(chinVotes);
 
+    // Aggregate visutry-compatible ratios (median of per-frame values)
+    const visutryArr = perFrame.map((m) => m.visutry).filter((v): v is NonNullable<FaceMetrics["visutry"]> => v !== undefined);
+    const visutry = visutryArr.length > 0
+      ? {
+          faceAspectRatio: median(visutryArr.map((v) => v.faceAspectRatio)),
+          cheekToFaceWidth: median(visutryArr.map((v) => v.cheekToFaceWidth)),
+          jawToCheekWidth: median(visutryArr.map((v) => v.jawToCheekWidth)),
+          foreheadToCheekWidth: median(visutryArr.map((v) => v.foreheadToCheekWidth)),
+          eyeLineTiltDeg: median(visutryArr.map((v) => v.eyeLineTiltDeg)),
+          symmetryOffset: median(visutryArr.map((v) => v.symmetryOffset)),
+          noseBridgeToFaceWidth: median(visutryArr.map((v) => v.noseBridgeToFaceWidth)),
+        }
+      : undefined;
+
     return {
       faceWidth,
       faceHeight,
@@ -215,6 +235,7 @@ export class FaceMetricsCalculator {
       faceSpan,
       chinType,
       measurementQuality,
+      visutry,
     };
   }
 
@@ -228,6 +249,65 @@ export class FaceMetricsCalculator {
       { x: a.x, y: a.y, z: a.z ?? 0 },
       { x: b.x, y: b.y, z: b.z ?? 0 },
     );
+  }
+
+  /**
+   * 2D distance (x, y only — no z). Used for visutry-compatible ratios.
+   */
+  private safeDistance2D(a?: { x: number; y: number }, b?: { x: number; y: number }): number | undefined {
+    if (!a || !b) return undefined;
+    return distance2D({ x: a.x, y: a.y }, { x: b.x, y: b.y });
+  }
+
+  /**
+   * Compute visutry-compatible ratios using 2D distances.
+   * This mirrors visutry's analyzeFaceLandmarks() exactly:
+   *   - faceAspectRatio = faceHeight / faceWidth (H/W, 2D)
+   *   - cheekToFaceWidth = cheekWidth / faceWidth
+   *   - jawToCheekWidth = jawWidth / cheekWidth
+   *   - foreheadToCheekWidth = foreheadWidth / cheekWidth
+   *   - eyeLineTiltDeg = atan2(dy, dx) * 180/PI
+   *   - symmetryOffset = |noseBridge.x - faceCenterX| / faceWidth
+   *   - noseBridgeToFaceWidth = noseBridgeWidth / faceWidth
+   */
+  private computeVisutryRatios(s: FaceSemanticPoints): NonNullable<FaceMetrics["visutry"]> | undefined {
+    const required = [s.foreheadCenter, s.chin, s.leftFace, s.rightFace,
+      s.leftCheek, s.rightCheek, s.leftJaw, s.rightJaw,
+      s.leftForehead, s.rightForehead, s.leftEyeOuter, s.rightEyeOuter,
+      s.noseLeft, s.noseRight, s.noseBridge];
+    if (required.some((p) => !p)) return undefined;
+
+    // 2D distances — visutry multiplies by imageWidth/imageHeight but since
+    // these are ratios, the scaling cancels out. We compute with normalized
+    // coordinates directly.
+    const faceHeight = this.safeDistance2D(s.foreheadCenter!, s.chin!)!;
+    const faceWidth = this.safeDistance2D(s.leftFace!, s.rightFace)!;
+    const cheekWidth = this.safeDistance2D(s.leftCheek!, s.rightCheek)!;
+    const jawWidth = this.safeDistance2D(s.leftJaw!, s.rightJaw)!;
+    const foreheadWidth = this.safeDistance2D(s.leftForehead!, s.rightForehead)!;
+    const noseBridgeWidth = this.safeDistance2D(s.noseLeft!, s.noseRight)!;
+
+    if (faceHeight <= 0 || faceWidth <= 0 || cheekWidth <= 0) return undefined;
+
+    // Eye line tilt — visutry uses atan2(dy*H, dx*W). With normalized coords
+    // (W=H=1), this is atan2(dy, dx).
+    const dx = s.rightEyeOuter!.x - s.leftEyeOuter!.x;
+    const dy = s.rightEyeOuter!.y - s.leftEyeOuter!.y;
+    const eyeLineTiltDeg = Math.atan2(dy, dx) * (180 / Math.PI);
+
+    // Symmetry offset
+    const faceCenterX = (s.leftFace!.x + s.rightFace!.x) / 2;
+    const symmetryOffset = Math.abs(s.noseBridge!.x - faceCenterX) / faceWidth;
+
+    return {
+      faceAspectRatio: faceHeight / faceWidth,
+      cheekToFaceWidth: cheekWidth / faceWidth,
+      jawToCheekWidth: jawWidth / cheekWidth,
+      foreheadToCheekWidth: foreheadWidth / cheekWidth,
+      eyeLineTiltDeg,
+      symmetryOffset,
+      noseBridgeToFaceWidth: noseBridgeWidth / faceWidth,
+    };
   }
 
   private countKeyPoints(s: FaceSemanticPoints): number {

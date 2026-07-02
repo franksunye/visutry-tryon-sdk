@@ -72,6 +72,13 @@ function buildFaceResult(overrides: Partial<NormalizedFaceResult> = {}): Normali
     rightJaw: { x: 0.62, y: 0.63, z: -0.02 },
     leftBrowCenter: { x: 0.43, y: 0.38, z: -0.02 },
     rightBrowCenter: { x: 0.57, y: 0.38, z: -0.02 },
+    // visutry additions
+    leftFace: { x: 0.30, y: 0.50, z: -0.01 },
+    rightFace: { x: 0.70, y: 0.50, z: -0.01 },
+    leftForehead: { x: 0.38, y: 0.36, z: -0.02 },
+    rightForehead: { x: 0.62, y: 0.36, z: -0.02 },
+    noseLeft: { x: 0.44, y: 0.50, z: -0.03 },
+    noseRight: { x: 0.56, y: 0.50, z: -0.03 },
   };
 
   const raw: { x: number; y: number; z: number }[] = [];
@@ -244,7 +251,7 @@ describe("VisuTryWebSDK (facade)", () => {
     expect(result.candidates.length).toBeGreaterThan(0);
     expect(result.confidence).toBeGreaterThanOrEqual(0);
     expect(result.metrics).toBeDefined();
-    expect(result.version).toBe("1.2.0");
+    expect(result.version).toBe("2.0.0");
     expect(analyzedSpy).toHaveBeenCalledWith(result);
   });
 

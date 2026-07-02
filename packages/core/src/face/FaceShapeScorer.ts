@@ -2,68 +2,142 @@ import type {
   FaceMetrics,
   FaceQualityWarning,
   FaceShape,
+  FaceShapeCandidate,
   FaceShapeResult,
   NormalizedFaceResult,
 } from "../types/index.js";
 import { FaceMetricsCalculator } from "./FaceMetricsCalculator.js";
-import { clamp01, softmax } from "../utils/math.js";
 
-export const FACE_SHAPE_SCORER_VERSION = "1.2.0";
+export const FACE_SHAPE_SCORER_VERSION = "2.0.0";
 
-/** Gaussian membership: 1 at `center`, falls off with `sigma`. */
-function bell(value: number, center: number, sigma: number): number {
-  if (sigma <= 0) return value === center ? 1 : 0;
-  const d = (value - center) / sigma;
-  return Math.exp(-0.5 * d * d);
+/**
+ * All canonical face shapes, in the same order as visutry's CANONICAL_FACE_SHAPES.
+ */
+const CANONICAL_SHAPES: FaceShape[] = [
+  "oval",
+  "round",
+  "square",
+  "heart",
+  "diamond",
+  "oblong",
+  "triangle",
+];
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
-/** Trapezoidal membership: full inside [lo,hi], linear ramps at edges. */
-function trap(value: number, lo: number, hi: number, ramp = 0.05): number {
-  if (value < lo - ramp || value > hi + ramp) return 0;
-  if (value >= lo && value <= hi) return 1;
-  if (value < lo) return (value - (lo - ramp)) / ramp;
-  return (hi + ramp - value) / ramp;
-}
-
-interface ShapeScoreContext {
-  whr: number; // widthHeightRatio
-  jcr: number; // jawCheekRatio
-  chinType: FaceMetrics["chinType"];
-  /** jawWidth / eyeOuterDistance — low => upper face wider (heart-ish). */
-  jawToEyeOuter: number;
-  /** eyeOuterDistance / cheekboneWidth — <1 => cheekbone wider than eye span. */
-  eyeOuterToCheek: number;
-  /** foreheadWidth / cheekboneWidth — low => forehead narrower (diamond/triangle). */
-  fcr: number | undefined;
-}
-
-function buildContext(m: FaceMetrics): ShapeScoreContext {
-  const eyeOuter = m.eyeOuterDistance || 1e-6;
-  const cheek = m.cheekboneWidth || 1e-6;
-  return {
-    whr: m.widthHeightRatio,
-    jcr: m.jawCheekRatio,
-    chinType: m.chinType,
-    jawToEyeOuter: (m.jawWidth || 0) / eyeOuter,
-    eyeOuterToCheek: eyeOuter / cheek,
-    fcr: m.foreheadCheekRatio,
-  };
-}
-
-/** Bonus for chin type match: full match=1, compatible=0.5, mismatch=0. */
-function chinBonus(actual: FaceMetrics["chinType"], preferred: FaceMetrics["chinType"][]): number {
-  if (actual === "unknown") return 0.5;
-  if (preferred.includes(actual)) return 1;
-  return 0.3;
+function round(value: number, digits = 3): number {
+  const factor = 10 ** digits;
+  return Math.round(value * factor) / factor;
 }
 
 /**
- * Scores face shapes from geometric metrics using independent membership
- * functions per shape, then normalises via softmax to produce top-k candidates.
+ * Build geometry signals — exact port of visutry's buildGeometrySignals().
+ */
+function buildGeometrySignals(
+  shape: FaceShape,
+  ratios: NonNullable<FaceMetrics["visutry"]>,
+): string[] {
+  const lengthSignal =
+    ratios.faceAspectRatio >= 1.42
+      ? "Longer vertical face proportion"
+      : ratios.faceAspectRatio < 1.2
+        ? "Compact face length relative to width"
+        : "Balanced face length-to-width ratio";
+  const jawSignal =
+    ratios.jawToCheekWidth >= 0.94
+      ? "Jaw width is close to cheekbone width"
+      : ratios.jawToCheekWidth <= 0.78
+        ? "Jawline tapers below the cheekbones"
+        : "Jawline has moderate taper";
+  const upperSignal =
+    ratios.foreheadToCheekWidth >= 0.9
+      ? "Forehead width is close to cheekbone width"
+      : "Cheekbones read wider than the upper face";
+  const shapeSignal = shape.charAt(0).toUpperCase() + shape.slice(1) + " shape supported by measured proportions";
+
+  return [shapeSignal, lengthSignal, jawSignal, upperSignal];
+}
+
+/**
+ * classifyFaceGeometry — exact port of visutry's classifyFaceGeometry().
  *
- * The scorer never issues a single hard if/else verdict (spec §13.3). Every
- * shape receives an independent score; the highest becomes `primary` only when
- * the margin of confidence is sufficient.
+ * Uses integer if/else scoring on three key ratios:
+ *   - faceAspectRatio (H/W, 2D)
+ *   - jawToCheekWidth
+ *   - foreheadToCheekWidth
+ *
+ * Confidence: clamp(0.56 + best.score * 0.065 + margin * 0.035, 0.58, 0.93)
+ */
+function classifyFaceGeometry(ratios: NonNullable<FaceMetrics["visutry"]>): {
+  shape: FaceShape;
+  alternatives: FaceShape[];
+  confidence: number;
+  signals: string[];
+} {
+  const scores: Record<string, number> = {
+    round: 0,
+    square: 0,
+    oval: 0,
+    heart: 0,
+    diamond: 0,
+    oblong: 0,
+    triangle: 0,
+  };
+
+  const { faceAspectRatio, jawToCheekWidth, foreheadToCheekWidth } = ratios;
+
+  // --- Exact replication of visutry's scoring rules ---
+  if (faceAspectRatio >= 1.42) scores.oblong += 4;
+  if (faceAspectRatio >= 1.27 && faceAspectRatio < 1.42) scores.oval += 3;
+  if (faceAspectRatio < 1.2) scores.round += 2;
+  if (faceAspectRatio < 1.18 && jawToCheekWidth >= 0.86) scores.square += 3;
+  if (jawToCheekWidth >= 0.92 && foreheadToCheekWidth >= 0.9) scores.square += 3;
+  if (jawToCheekWidth < 0.76 && foreheadToCheekWidth >= 0.84) scores.heart += 4;
+  if (jawToCheekWidth < 0.78 && foreheadToCheekWidth < 0.84) scores.diamond += 4;
+  if (jawToCheekWidth > 0.98 && foreheadToCheekWidth < 0.88) scores.triangle += 4;
+  if (jawToCheekWidth >= 0.78 && jawToCheekWidth <= 0.9 && faceAspectRatio >= 1.2) {
+    scores.oval += 2;
+  }
+  if (jawToCheekWidth >= 0.82 && jawToCheekWidth <= 0.94 && faceAspectRatio < 1.22) {
+    scores.round += 2;
+  }
+
+  // --- Rank candidates ---
+  const ranked = CANONICAL_SHAPES.map((shape) => ({ shape, score: scores[shape] })).sort(
+    (a, b) => b.score - a.score,
+  );
+  const best = ranked[0];
+  const second = ranked[1];
+  const confidence = clamp(
+    0.56 + best.score * 0.065 + (best.score - second.score) * 0.035,
+    0.58,
+    0.93,
+  );
+
+  const alternatives = ranked
+    .slice(1, 3)
+    .filter((candidate) => candidate.score > 0)
+    .map((candidate) => candidate.shape);
+
+  return {
+    shape: best.shape,
+    alternatives,
+    confidence: round(confidence, 2),
+    signals: buildGeometrySignals(best.shape, ratios),
+  };
+}
+
+/**
+ * Scores face shapes from geometric metrics.
+ *
+ * v2.0.0: Exact port of visutry's classifyFaceGeometry algorithm.
+ * Uses if/else integer scoring on 2D ratios — not bell/softmax.
+ * This ensures numerical equivalence with visutry's main site.
+ *
+ * Future enhancements (bell functions, softmax, chinType, multi-frame)
+ * can be layered on top of this known-good baseline.
  */
 export class FaceShapeScorer {
   private readonly metricsCalculator: FaceMetricsCalculator;
@@ -81,42 +155,79 @@ export class FaceShapeScorer {
   }
 
   /**
-   * Score from pre-aggregated metrics (multi-frame path).
+   * Score from pre-aggregated metrics.
    */
   scoreFromMetrics(metrics: FaceMetrics, warnings: FaceQualityWarning[] = []): FaceShapeResult {
-    const ctx = buildContext(metrics);
-    const raw = this.scoreAllShapes(ctx, metrics);
-    // Lower temperature = sharper distribution = top candidate gets more mass.
-    const probs = softmax(raw.map((s) => s.score), 0.4);
+    // Require visutry-compatible ratios for classification.
+    if (!metrics.visutry) {
+      return this.unknownResult(metrics, [...warnings, "MISSING_KEY_POINTS"]);
+    }
 
-    const ranked = raw
-      .map((s, i) => ({ ...s, score: probs[i] }))
-      .sort((a, b) => b.score - a.score);
+    const v = metrics.visutry;
 
-    const primary = ranked[0];
-    const second = ranked[1];
-    const margin = primary.score - (second?.score ?? 0);
-
-    // Confidence blends the score margin with measurement quality.
-    // With 7 candidates, softmax margins are inherently smaller, so we
-    // weight measurementQuality more heavily and use a gentler base.
-    const confidence = clamp01(margin * 1.5 + metrics.measurementQuality * 0.35);
+    // --- Quality gates (exact match to visutry's analyzeFaceLandmarks) ---
+    const MAX_TILT = 15;
+    const MAX_SYMMETRY = 0.14;
+    const MIN_SPAN = 0.16;
 
     const allWarnings = [...warnings];
-    let primaryShape: FaceShape = primary.shape;
-    if (confidence < 0.35) {
-      primaryShape = "unknown";
-      if (!allWarnings.includes("LOW_CONFIDENCE")) allWarnings.push("LOW_CONFIDENCE");
+
+    // Face span check
+    if (metrics.faceSpan !== undefined && metrics.faceSpan < MIN_SPAN) {
+      allWarnings.push("FACE_TOO_SMALL");
+    }
+
+    // Tilt check — visutry rejects > 15° as unavailable
+    if (Math.abs(v.eyeLineTiltDeg) > MAX_TILT) {
+      allWarnings.push("EXCESSIVE_TILT");
+    }
+
+    // Symmetry check — visutry rejects > 0.14 as unavailable
+    if (v.symmetryOffset > MAX_SYMMETRY) {
+      allWarnings.push("ASYMMETRIC_FACE");
+    }
+
+    // If quality gates failed, return unknown
+    if (allWarnings.some((w) => w === "EXCESSIVE_TILT" || w === "ASYMMETRIC_FACE" || w === "FACE_TOO_SMALL")) {
+      return this.unknownResult(metrics, allWarnings);
+    }
+
+    // --- Classify using visutry's exact algorithm ---
+    const result = classifyFaceGeometry(v);
+
+    // --- Build candidates list ---
+    // visutry returns shape + alternatives; we also include all shapes with
+    // their integer scores as candidates for SDK consumers.
+    const scores = this.getAllScores(v);
+    const ranked = CANONICAL_SHAPES.map((shape) => ({
+      shape,
+      score: scores[shape],
+    })).sort((a, b) => b.score - a.score);
+
+    const maxScore = Math.max(...ranked.map((r) => r.score), 1);
+
+    const candidates: FaceShapeCandidate[] = ranked.map((r) => ({
+      shape: r.shape,
+      score: round(r.score / maxScore, 3),
+      reasons: buildGeometrySignals(r.shape, v),
+    }));
+
+    // --- Soft warnings for borderline quality ---
+    if (Math.abs(v.eyeLineTiltDeg) > 8) {
+      if (!allWarnings.includes("EXCESSIVE_TILT")) {
+        allWarnings.push("EXCESSIVE_TILT");
+      }
+    }
+    if (v.symmetryOffset > 0.08) {
+      if (!allWarnings.includes("ASYMMETRIC_FACE")) {
+        allWarnings.push("ASYMMETRIC_FACE");
+      }
     }
 
     return {
-      primary: primaryShape,
-      candidates: ranked.map((c) => ({
-        shape: c.shape,
-        score: Math.round(c.score * 1000) / 1000,
-        reasons: c.reasons,
-      })),
-      confidence: Math.round(confidence * 1000) / 1000,
+      primary: result.shape,
+      candidates,
+      confidence: result.confidence,
       metrics,
       warnings: allWarnings,
       version: FACE_SHAPE_SCORER_VERSION,
@@ -136,160 +247,46 @@ export class FaceShapeScorer {
   }
 
   // -----------------------------------------------------------------------
-  // Per-shape scoring
+  // Internal helpers
   // -----------------------------------------------------------------------
 
-  private scoreAllShapes(ctx: ShapeScoreContext, _m: FaceMetrics): Array<{
-    shape: FaceShape;
-    score: number;
-    reasons: string[];
-  }> {
-    return [
-      this.scoreOval(ctx),
-      this.scoreRound(ctx),
-      this.scoreSquare(ctx),
-      this.scoreHeart(ctx),
-      this.scoreDiamond(ctx),
-      this.scoreOblong(ctx),
-      this.scoreTriangle(ctx),
-    ];
-  }
-
-  /** oval: face length slightly > width, jaw slightly < cheek, rounded chin. */
-  private scoreOval(ctx: ShapeScoreContext): { shape: FaceShape; score: number; reasons: string[] } {
-    const whrScore = bell(ctx.whr, 0.78, 0.10);
-    const jcrScore = bell(ctx.jcr, 0.80, 0.10);
-    const chinScore = chinBonus(ctx.chinType, ["rounded"]);
-    const score = whrScore * 0.4 + jcrScore * 0.35 + chinScore * 0.25;
-    return {
-      shape: "oval",
-      score,
-      reasons: [
-        `width/height ${ctx.whr.toFixed(2)} (ideal ~0.80)`,
-        `jaw/cheek ${ctx.jcr.toFixed(2)} (slightly tapered)`,
-        `chin ${ctx.chinType}`,
-      ],
+  /**
+   * Get raw integer scores for all 7 shapes — same as visutry's scoring.
+   */
+  private getAllScores(v: NonNullable<FaceMetrics["visutry"]>): Record<string, number> {
+    const scores: Record<string, number> = {
+      round: 0, square: 0, oval: 0, heart: 0, diamond: 0, oblong: 0, triangle: 0,
     };
+
+    const { faceAspectRatio, jawToCheekWidth, foreheadToCheekWidth } = v;
+
+    if (faceAspectRatio >= 1.42) scores.oblong += 4;
+    if (faceAspectRatio >= 1.27 && faceAspectRatio < 1.42) scores.oval += 3;
+    if (faceAspectRatio < 1.2) scores.round += 2;
+    if (faceAspectRatio < 1.18 && jawToCheekWidth >= 0.86) scores.square += 3;
+    if (jawToCheekWidth >= 0.92 && foreheadToCheekWidth >= 0.9) scores.square += 3;
+    if (jawToCheekWidth < 0.76 && foreheadToCheekWidth >= 0.84) scores.heart += 4;
+    if (jawToCheekWidth < 0.78 && foreheadToCheekWidth < 0.84) scores.diamond += 4;
+    if (jawToCheekWidth > 0.98 && foreheadToCheekWidth < 0.88) scores.triangle += 4;
+    if (jawToCheekWidth >= 0.78 && jawToCheekWidth <= 0.9 && faceAspectRatio >= 1.2) {
+      scores.oval += 2;
+    }
+    if (jawToCheekWidth >= 0.82 && jawToCheekWidth <= 0.94 && faceAspectRatio < 1.22) {
+      scores.round += 2;
+    }
+
+    return scores;
   }
 
-  /** round: width ≈ height, broad jaw, rounded chin. */
-  private scoreRound(ctx: ShapeScoreContext): { shape: FaceShape; score: number; reasons: string[] } {
-    // Center at 1.0 (width = height), wide sigma to cover 0.85-1.15 range.
-    const whrScore = bell(ctx.whr, 1.0, 0.10);
-    const jcrScore = bell(ctx.jcr, 0.91, 0.10);
-    const chinScore = chinBonus(ctx.chinType, ["rounded"]);
-    const score = whrScore * 0.4 + jcrScore * 0.3 + chinScore * 0.3;
-    return {
-      shape: "round",
-      score,
-      reasons: [
-        `width/height ${ctx.whr.toFixed(2)} (near 1.0)`,
-        `jaw/cheek ${ctx.jcr.toFixed(2)} (broad)`,
-        `chin ${ctx.chinType}`,
-      ],
-    };
-  }
-
-  /** square: jaw ≈ cheek, square chin, medium proportions. */
-  private scoreSquare(ctx: ShapeScoreContext): { shape: FaceShape; score: number; reasons: string[] } {
-    const jcrScore = trap(ctx.jcr, 0.86, 1.05, 0.06);
-    const whrScore = bell(ctx.whr, 0.88, 0.10);
-    const chinScore = chinBonus(ctx.chinType, ["square"]);
-    const score = jcrScore * 0.45 + whrScore * 0.25 + chinScore * 0.3;
-    return {
-      shape: "square",
-      score,
-      reasons: [
-        `jaw/cheek ${ctx.jcr.toFixed(2)} (strong jaw)`,
-        `width/height ${ctx.whr.toFixed(2)} (medium)`,
-        `chin ${ctx.chinType}`,
-      ],
-    };
-  }
-
-  /** heart: upper face wider, jaw narrows, pointed chin. */
-  private scoreHeart(ctx: ShapeScoreContext): { shape: FaceShape; score: number; reasons: string[] } {
-    // Use foreheadCheekRatio when available for more precise classification.
-    // Heart: forehead ≥ cheek (fcr high) + jaw narrows (jcr low).
-    const fcrScore = ctx.fcr !== undefined ? bell(ctx.fcr, 0.92, 0.10) : 0.5;
-    const taperScore = bell(ctx.jawToEyeOuter, 0.58, 0.10); // jaw much narrower than eye span
-    const jcrScore = bell(ctx.jcr, 0.58, 0.10);
-    const chinScore = chinBonus(ctx.chinType, ["pointed"]);
-    const score = (ctx.fcr !== undefined ? fcrScore * 0.2 + taperScore * 0.2 : taperScore * 0.4)
-      + jcrScore * 0.3 + chinScore * 0.3;
-    return {
-      shape: "heart",
-      score,
-      reasons: [
-        `jaw/eyeOuter ${ctx.jawToEyeOuter.toFixed(2)} (upper wider)`,
-        `jaw/cheek ${ctx.jcr.toFixed(2)} (narrowing)`,
-        ctx.fcr !== undefined ? `forehead/cheek ${ctx.fcr.toFixed(2)} (broad forehead)` : `chin ${ctx.chinType}`,
-        `chin ${ctx.chinType}`,
-      ],
-    };
-  }
-
-  /** diamond: cheekbone widest, forehead & jaw narrower, pointed chin. */
-  private scoreDiamond(ctx: ShapeScoreContext): { shape: FaceShape; score: number; reasons: string[] } {
-    // Use foreheadCheekRatio when available: diamond has narrow forehead (fcr low).
-    const fcrScore = ctx.fcr !== undefined ? bell(ctx.fcr, 0.78, 0.08) : 0.5;
-    const cheekDominant = bell(ctx.eyeOuterToCheek, 0.7, 0.10); // eye span < cheek
-    const jcrScore = bell(ctx.jcr, 0.64, 0.10); // jaw narrower than cheek
-    const chinScore = chinBonus(ctx.chinType, ["pointed"]);
-    const score = (ctx.fcr !== undefined ? fcrScore * 0.2 + cheekDominant * 0.2 : cheekDominant * 0.4)
-      + jcrScore * 0.3 + chinScore * 0.3;
-    return {
-      shape: "diamond",
-      score,
-      reasons: [
-        `eyeOuter/cheek ${ctx.eyeOuterToCheek.toFixed(2)} (cheekbone widest)`,
-        `jaw/cheek ${ctx.jcr.toFixed(2)} (narrow)`,
-        ctx.fcr !== undefined ? `forehead/cheek ${ctx.fcr.toFixed(2)} (narrow forehead)` : `chin ${ctx.chinType}`,
-        `chin ${ctx.chinType}`,
-      ],
-    };
-  }
-
-  /** oblong: height >> width, similar widths, low WHR. */
-  private scoreOblong(ctx: ShapeScoreContext): { shape: FaceShape; score: number; reasons: string[] } {
-    const whrScore = bell(ctx.whr, 0.66, 0.07);
-    const uniformScore = bell(ctx.jcr, 0.82, 0.10); // jaw not too different from cheek
-    const score = whrScore * 0.6 + uniformScore * 0.4;
-    return {
-      shape: "oblong",
-      score,
-      reasons: [
-        `width/height ${ctx.whr.toFixed(2)} (elongated)`,
-        `jaw/cheek ${ctx.jcr.toFixed(2)} (uniform widths)`,
-      ],
-    };
-  }
-
-  /** triangle: jaw wider than cheek, forehead narrower, broad chin. */
-  private scoreTriangle(ctx: ShapeScoreContext): { shape: FaceShape; score: number; reasons: string[] } {
-    // Triangle: jaw ≥ cheek (jcr high) + forehead < cheek (fcr low).
-    const jcrScore = trap(ctx.jcr, 0.92, 1.15, 0.06);
-    const fcrScore = ctx.fcr !== undefined ? bell(ctx.fcr, 0.82, 0.08) : 0.5;
-    const chinScore = chinBonus(ctx.chinType, ["square", "rounded"]);
-    const score = (ctx.fcr !== undefined ? jcrScore * 0.35 + fcrScore * 0.35 : jcrScore * 0.6)
-      + chinScore * (ctx.fcr !== undefined ? 0.3 : 0.4);
-    return {
-      shape: "triangle",
-      score,
-      reasons: [
-        `jaw/cheek ${ctx.jcr.toFixed(2)} (jaw dominant)`,
-        ctx.fcr !== undefined ? `forehead/cheek ${ctx.fcr.toFixed(2)} (narrow forehead)` : `chin ${ctx.chinType}`,
-        `chin ${ctx.chinType}`,
-      ],
-    };
-  }
-
-  private unknownResult(): FaceShapeResult {
+  private unknownResult(
+    metrics?: FaceMetrics,
+    warnings: FaceQualityWarning[] = ["LOW_CONFIDENCE"],
+  ): FaceShapeResult {
     return {
       primary: "unknown",
       candidates: [],
       confidence: 0,
-      metrics: {
+      metrics: metrics ?? {
         faceWidth: 0,
         faceHeight: 0,
         cheekboneWidth: 0,
@@ -303,7 +300,7 @@ export class FaceShapeScorer {
         chinType: "unknown",
         measurementQuality: 0,
       },
-      warnings: ["LOW_CONFIDENCE", "MISSING_KEY_POINTS"],
+      warnings,
       version: FACE_SHAPE_SCORER_VERSION,
     };
   }
