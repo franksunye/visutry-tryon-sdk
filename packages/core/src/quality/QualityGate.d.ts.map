@@ -1,1 +1,0 @@
-{"version":3,"file":"QualityGate.d.ts","sourceRoot":"","sources":["QualityGate.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAIV,gBAAgB,EAEhB,iBAAiB,EAClB,MAAM,mBAAmB,CAAC;AA2C3B;;;;;;GAMG;AACH,qBAAa,WAAW;IACtB,QAAQ,CAAC,KAAK,EAAE,gBAAgB,GAAG,iBAAiB;IAsEpD;;;OAGG;IACH,OAAO,CAAC,iBAAiB;IA2CzB;;;OAGG;IACH,OAAO,CAAC,YAAY;CAUrB"}
