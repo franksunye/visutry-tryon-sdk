@@ -21,9 +21,13 @@ export type { MediaPipeTrackerOptions } from "./tracker/MediaPipeFaceTracker.js"
 // Renderer
 export { ThreeJsRenderer } from "./renderer/ThreeJsRenderer.js";
 
+// Overlay
+export { LandmarkOverlay } from "./overlay/LandmarkOverlay.js";
+export type { LandmarkOverlayOptions, LandmarkOverlayRenderInput } from "./overlay/LandmarkOverlay.js";
+
 // SDK facade
 export { createVisuTryWebSDK, createVisuTryImageAnalyzer } from "./VisuTryWebSDK.js";
-export type { VisuTryWebSDKFactoryOptions } from "./VisuTryWebSDK.js";
+export type { VisuTryWebSDKFactoryOptions, ImageAnalyzer } from "./VisuTryWebSDK.js";
 
 // Re-export core types and utilities for convenience
 export {

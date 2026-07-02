@@ -6,7 +6,7 @@
  * report format for head-to-head comparison.
  */
 
-import { createVisuTryImageAnalyzer } from "@visutry/tryon-web";
+import { createVisuTryImageAnalyzer, LandmarkOverlay } from "@visutry/tryon-web";
 import type { FaceShapeResult, FaceShape } from "@visutry/tryon-core";
 
 // ---------------------------------------------------------------------------
@@ -176,6 +176,17 @@ async function handleFile(file: File): Promise<void> {
 
     // Run analysis
     const result = await imageAnalyzer.analyzeFaceShapeFromImage(img);
+
+    // Render landmark mesh overlay on the photo
+    const face = imageAnalyzer.getLastFaceResult();
+    const landmarkCanvas = document.getElementById("landmark-canvas") as HTMLCanvasElement;
+    if (face && landmarkCanvas && face.landmarks.connections) {
+      const overlay = new LandmarkOverlay(landmarkCanvas);
+      // Use a small timeout to let the image render first
+      requestAnimationFrame(() => {
+        overlay.renderFromFace(face, img.naturalWidth, img.naturalHeight);
+      });
+    }
 
     // Display report
     uploadedPhoto.src = imgUrl;

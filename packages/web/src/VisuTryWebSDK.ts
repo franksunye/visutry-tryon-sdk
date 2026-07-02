@@ -87,15 +87,25 @@ export function createVisuTryWebSDK(options: VisuTryWebSDKFactoryOptions): VisuT
  * img.src = 'photo.jpg';
  * await img.decode();
  * const result = await sdk.analyzeFaceShapeFromImage(img);
+ * // For landmark overlay:
+ * const face = sdk.getLastFaceResult();
  * ```
  */
+export interface ImageAnalyzer {
+  analyzeFaceShapeFromImage(image: unknown): Promise<FaceShapeResult>;
+  /** Returns the last detected face result (for landmark overlay rendering). */
+  getLastFaceResult(): NormalizedFaceResult | null;
+  destroy(): void;
+}
+
 export function createVisuTryImageAnalyzer(
   options?: MediaPipeTrackerOptions,
-): Pick<VisuTrySDK, "analyzeFaceShapeFromImage" | "destroy"> {
+): ImageAnalyzer {
   const tracker = new MediaPipeFaceTracker(options ?? {}, { mode: "balanced" });
   const scorer = new FaceShapeScorer();
   const qualityGate = new QualityGate();
   let destroyed = false;
+  let lastFace: NormalizedFaceResult | null = null;
 
   return {
     async analyzeFaceShapeFromImage(image: unknown): Promise<FaceShapeResult> {
@@ -106,6 +116,7 @@ export function createVisuTryImageAnalyzer(
       if (!face) {
         throw createSDKError("UNKNOWN", "No face detected in the provided image");
       }
+      lastFace = face;
       const gate = qualityGate.evaluate({ face, mode: "analysis" });
       const result = scorer.scoreFrames([face]);
       if (gate.warnings.length > 0) {
@@ -113,6 +124,9 @@ export function createVisuTryImageAnalyzer(
         return { ...result, warnings: merged };
       }
       return result;
+    },
+    getLastFaceResult(): NormalizedFaceResult | null {
+      return lastFace;
     },
     destroy(): void {
       destroyed = true;

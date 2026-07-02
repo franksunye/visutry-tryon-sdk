@@ -239,6 +239,42 @@ export class MediaPipeFaceTracker implements IFaceTracker {
 
   // -----------------------------------------------------------------------
 
+  /**
+   * Extract MediaPipe connection data (tesselation, contours, irises) for
+   * landmark mesh rendering. These are static arrays on the FaceLandmarker class.
+   */
+  private cachedConnections: import("@visutry/tryon-core").LandmarkConnections | null = null;
+
+  private getConnections(): import("@visutry/tryon-core").LandmarkConnections | undefined {
+    if (this.cachedConnections) return this.cachedConnections;
+
+    // FaceLandmarker exposes static connection arrays on the class itself.
+    const FL = this.landmarker?.constructor as typeof FaceLandmarker;
+    // Also check the IMAGE-mode landmarker
+    const FL2 = this.imageLandmarker?.constructor as typeof FaceLandmarker;
+    const cls = FL ?? FL2;
+    if (!cls) return undefined;
+
+    const tesselation = (cls as unknown as {
+      FACE_LANDMARKS_TESSELATION?: Array<{ start: number; end: number }>;
+    }).FACE_LANDMARKS_TESSELATION;
+    const contours = (cls as unknown as {
+      FACE_LANDMARKS_CONTOURS?: Array<{ start: number; end: number }>;
+    }).FACE_LANDMARKS_CONTOURS;
+    const irises = (cls as unknown as {
+      FACE_LANDMARKS_IRISES?: Array<{ start: number; end: number }>;
+    }).FACE_LANDMARKS_IRISES;
+
+    if (!tesselation && !contours && !irises) return undefined;
+
+    this.cachedConnections = {
+      tesselation: tesselation ?? [],
+      contours: contours ?? [],
+      irises: irises ?? [],
+    };
+    return this.cachedConnections;
+  }
+
   private buildResult(
     landmarks: { x: number; y: number; z?: number }[],
     matrix: number[] | undefined,
@@ -259,6 +295,7 @@ export class MediaPipeFaceTracker implements IFaceTracker {
         raw: points,
         normalized: points,
         semantic,
+        connections: this.getConnections(),
       },
       pose,
       bbox,

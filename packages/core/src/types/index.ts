@@ -126,6 +126,19 @@ export interface FaceQuality {
 
 export type FaceResultSource = "mediapipe" | "wechat-vk" | "custom";
 
+/** A pair of landmark indices representing a connection/edge. */
+export interface LandmarkConnection {
+  start: number;
+  end: number;
+}
+
+/** Connection groups for landmark mesh rendering (MediaPipe convention). */
+export interface LandmarkConnections {
+  tesselation: LandmarkConnection[];
+  contours: LandmarkConnection[];
+  irises: LandmarkConnection[];
+}
+
 export interface NormalizedFaceResult {
   source: FaceResultSource;
   timestamp: number;
@@ -133,6 +146,8 @@ export interface NormalizedFaceResult {
     raw: Point3D[];
     normalized: Point3D[];
     semantic: FaceSemanticPoints;
+    /** Connection data for mesh rendering (available when source="mediapipe"). */
+    connections?: LandmarkConnections;
   };
   pose: FacePose;
   bbox: NormalizedRect;
