@@ -1,9 +1,18 @@
 {
   "name": "visutry-tryon-sdk",
-  "version": "1.0.0-beta.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "VisuTry Face Geometry & AR Glasses Try-On SDK — H5 / WeChat Mini Program.",
+  "description": "VisuTry Face Geometry & AR Glasses Try-On SDK — H5 / WeChat Mini Program. On-device face shape analysis and real-time AR glasses try-on.",
   "license": "MIT",
+  "author": "VisuTry",
+  "homepage": "https://github.com/visutry/visutry-tryon-sdk#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/visutry/visutry-tryon-sdk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/visutry/visutry-tryon-sdk/issues"
+  },
   "keywords": [
     "ar",
     "try-on",
@@ -28,7 +37,7 @@
     "lint": "eslint \"packages/**/*.ts\" \"examples/**/*.ts\"",
     "format": "prettier --write \"**/*.{ts,js,json,md,html,css}\"",
     "typecheck": "pnpm -r --filter=./packages/* run typecheck",
-    "clean": "pnpm -r exec rimraf dist .turbo coverage",
+    "clean": "pnpm -r exec rimraf dist coverage .tsbuildinfo",
     "demo:web": "pnpm --filter ./examples/web-demo run dev",
     "docs:api": "typedoc",
     "changeset": "changeset",

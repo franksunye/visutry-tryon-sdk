@@ -1,37 +1,43 @@
 # VisuTry Face Geometry & AR Glasses Try-On SDK
 
-**版本**: v1.0.0-beta.0  
-**状态**: Engineering Ready  
-**目标平台**: H5 / 微信小程序  
-**优先级**: H5 Stable First，小程序 Experimental
+[![CI](https://github.com/visutry/visutry-tryon-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/visutry/visutry-tryon-sdk/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](https://www.typescriptlang.org/)
+[![Tests](https://img.shields.io/badge/tests-368%20passed-brightgreen.svg)](#testing)
 
-VisuTry SDK 是一套面向 H5 与微信小程序的端侧 Face Geometry & AR Glasses Try-On SDK，提供统一的人脸语义点、脸型分析、眼镜位姿求解、眼镜模型渲染和镜框推荐能力。
+On-device face geometry analysis and AR glasses try-on SDK for **web (H5)** and **WeChat Mini Program**. All face processing happens locally — no images or landmarks are sent to a server.
 
-## 核心特性
+---
 
-- **端侧处理优先** — 人脸图像、视频帧、landmarks 默认不上传服务端
-- **Core 与 Adapter 分离** — 核心算法不依赖浏览器、微信小程序、MediaPipe、Three.js
-- **H5 稳定优先** — v1.0 主验收平台是 H5
-- **脸型分析与试戴追踪分离** — 静态分析与实时追踪互不干扰
-- **眼镜模型规范化** — 所有可试戴眼镜模型必须带 asset manifest
+## Features
 
-## 快速开始
+- **On-device first** — face images, video frames, and landmarks never leave the device by default
+- **Core / Adapter separation** — core algorithms have zero browser, MediaPipe, or Three.js dependencies
+- **Face shape analysis** — 7 shape classification (oval, round, square, heart, diamond, oblong, triangle) with 2D geometric ratios and confidence scoring
+- **Landmark mesh overlay** — render MediaPipe's 478-point face mesh with customizable colors, contours, and highlight points
+- **Real-time AR try-on** — 3D glasses rendering with pose solving, smoothing, and quality gating
+- **Single-photo analysis** — `analyzeFaceShapeFromImage()` for non-camera use cases
+- **Glasses recommendation engine** — shape + size + preference scoring
+- **Normalized glasses manifest** — standardized asset format for all try-on models
+- **Multi-platform** — H5 (stable), WeChat Mini Program (experimental)
 
-### 安装
+## Quick Start
+
+### Install
 
 ```bash
 pnpm install
 ```
 
-### 构建
+### Build & Test
 
 ```bash
-pnpm build        # 构建所有包
-pnpm test         # 运行所有测试
-pnpm typecheck    # 类型检查
+pnpm build        # Build all packages
+pnpm test         # Run all tests
+pnpm typecheck    # Type check
 ```
 
-### 运行 H5 Demo
+### Run the Web Demo
 
 ```bash
 cd examples/web-demo
@@ -39,28 +45,36 @@ pnpm install
 pnpm dev
 ```
 
-在浏览器中打开 `http://localhost:5173`，允许摄像头权限即可体验 AR 眼镜试戴。
+Open `http://localhost:5173` in your browser. Pages available:
 
-## 包结构
+| Page | Description |
+|------|-------------|
+| `/` | AR glasses try-on with live camera |
+| `/face-analysis.html` | Upload a photo for face shape analysis with landmark mesh overlay |
+| `/compare.html` | Head-to-head comparison: SDK vs legacy algorithm |
 
-| 包 | 描述 | 状态 |
-|---|---|---|
-| `@visutry/tryon-core` | 平台无关核心：类型、坐标转换、语义点映射、脸型评分、位姿求解、smoothing、quality gate、privacy | Stable |
-| `@visutry/tryon-web` | H5 适配器：getUserMedia、MediaPipe FaceLandmarker、Three.js 渲染 | Stable |
-| `@visutry/tryon-wechat` | 微信小程序适配器（experimental） | Experimental |
-| `@visutry/recommender` | 镜框推荐引擎：脸型 + 尺寸 + 商品规则 | Stable |
-| `@visutry/demo-assets` | Demo 眼镜 manifest 和示例资产 | Demo |
+## Package Structure
 
-## 最小示例
+| Package | Description | Status |
+|---------|-------------|--------|
+| [`@visutry/tryon-core`](packages/core) | Platform-agnostic core: types, coordinate transforms, semantic point mapping, face shape scoring, pose solving, smoothing, quality gate, privacy | Stable |
+| [`@visutry/tryon-web`](packages/web) | H5 adapter: getUserMedia, MediaPipe FaceLandmarker, Three.js renderer, LandmarkOverlay | Stable |
+| [`@visutry/tryon-wechat`](packages/wechat) | WeChat Mini Program adapter | Experimental |
+| [`@visutry/recommender`](packages/recommender) | Glasses recommendation engine: shape + size + preference scoring | Stable |
+| [`@visutry/demo-assets`](packages/demo-assets) | Demo glasses manifests and sample assets | Demo |
+
+## Usage
+
+### AR Glasses Try-On (Live Camera)
 
 ```typescript
-import { createVisuTryWebSDK } from '@visutry/tryon-web';
+import { createVisuTryWebSDK } from "@visutry/tryon-web";
 
 const sdk = await createVisuTryWebSDK({
-  canvas: document.getElementById('tryon-canvas'),
-  camera: { facingMode: 'user', width: 640, height: 480 },
-  tracker: { mode: 'balanced', maxFaces: 1 },
-  renderer: { width: 640, height: 480, mirror: true, background: 'transparent' },
+  canvas: document.getElementById("tryon-canvas"),
+  camera: { facingMode: "user", width: 640, height: 480 },
+  tracker: { mode: "balanced", maxFaces: 1 },
+  renderer: { width: 640, height: 480, mirror: true, background: "transparent" },
   privacy: { processOnDeviceOnly: true, allowSnapshotExport: true },
 });
 
@@ -69,33 +83,86 @@ await sdk.startCamera();
 await sdk.startTryOn();
 await sdk.loadGlasses(manifest);
 
-// 脸型分析
+// Face shape analysis from live camera
 const result = await sdk.analyzeFaceShape();
 console.log(result.primary, result.confidence);
 
-// 截图
+// Snapshot
 const snapshot = await sdk.snapshot();
 ```
 
-## 文档
+### Face Shape Analysis (Single Photo)
 
-- [快速开始](docs/getting-started.md)
-- [H5 集成指南](docs/web-integration.md)
-- [微信小程序集成](docs/wechat-integration.md)
-- [眼镜模型规范](docs/glasses-asset-standard.md)
-- [脸型分析算法](docs/face-shape-algorithm.md)
-- [隐私政策](docs/privacy.md)
-- [性能优化](docs/performance.md)
+```typescript
+import { createVisuTryImageAnalyzer } from "@visutry/tryon-web";
 
-## 技术栈
+const analyzer = createVisuTryImageAnalyzer();
+const img = new Image();
+img.src = "photo.jpg";
+await img.decode();
 
-- TypeScript 5.7 (ES2020, strict)
-- pnpm 10 workspace monorepo
-- vitest 2.1 (jsdom)
-- @mediapipe/tasks-vision 0.10.18 (478-point FaceLandmarker)
-- Three.js 0.170 (OrthographicCamera, GLTFLoader)
-- ESLint + Prettier + Changesets
+const result = await analyzer.analyzeFaceShapeFromImage(img);
+console.log(result.primary);       // "round"
+console.log(result.confidence);    // 0.82
+console.log(result.candidates);    // [{ shape: "round", score: 0.85 }, ...]
+console.log(result.metrics.visutry.faceAspectRatio);  // 0.97
+```
 
-## 许可证
+### Landmark Mesh Overlay
 
-MIT
+```typescript
+import { createVisuTryImageAnalyzer, LandmarkOverlay } from "@visutry/tryon-web";
+
+const analyzer = createVisuTryImageAnalyzer();
+const result = await analyzer.analyzeFaceShapeFromImage(img);
+
+const face = analyzer.getLastFaceResult();
+const overlay = new LandmarkOverlay(canvas, {
+  tesselationColor: "rgba(56, 189, 248, 0.34)",
+  contourColor: "rgba(37, 99, 235, 0.9)",
+  highlightColor: "#2563eb",
+  showTesselation: true,
+  showHighlights: true,
+});
+overlay.renderFromFace(face, img.naturalWidth, img.naturalHeight);
+```
+
+## Documentation
+
+- [Getting Started](docs/getting-started.md)
+- [Web (H5) Integration Guide](docs/web-integration.md)
+- [WeChat Mini Program Integration](docs/wechat-integration.md)
+- [Glasses Asset Standard](docs/glasses-asset-standard.md)
+- [Face Shape Analysis Algorithm](docs/face-shape-algorithm.md)
+- [Privacy Model](docs/privacy.md)
+- [Performance Guide](docs/performance.md)
+
+## Tech Stack
+
+- **TypeScript** 5.7 (ES2020, strict mode)
+- **pnpm** 10 workspace monorepo
+- **vitest** 2.1 (jsdom, 80% coverage threshold)
+- **@mediapipe/tasks-vision** 0.10.18 (478-point FaceLandmarker)
+- **Three.js** 0.170 (OrthographicCamera, GLTFLoader)
+- **ESLint** + **Prettier** + **Changesets**
+
+## Testing
+
+The SDK maintains 368 unit tests across all packages with an 80% coverage threshold enforced in CI.
+
+```bash
+pnpm test           # Run all tests
+pnpm test:coverage  # Run with coverage report
+```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding standards, and pull request guidelines.
+
+## Security
+
+VisuTry processes all face data on-device. See [SECURITY.md](SECURITY.md) for vulnerability reporting policy.
+
+## License
+
+[MIT](LICENSE)
