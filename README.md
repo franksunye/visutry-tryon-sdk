@@ -15,6 +15,8 @@
 
 On-device face geometry analysis and AR glasses try-on SDK for **web (H5)** and **WeChat Mini Program**. All face processing happens locally — no images or landmarks are sent to a server.
 
+The face shape analysis algorithm in this SDK is the same one powering [VisuTry's online face shape detector](https://www.visutry.com/en/face-shape-detector), ensuring numerical equivalence between the SDK and the production web application.
+
 ---
 
 ## Features
@@ -174,3 +176,8 @@ VisuTry processes all face data on-device. See [SECURITY.md](SECURITY.md) for vu
 ## License
 
 [MIT](LICENSE)
+
+## Links
+
+- [VisuTry Online Face Shape Detector](https://www.visutry.com/en/face-shape-detector) — the production web application powered by this SDK's face shape analysis algorithm
+- [Face Shape Analysis Algorithm](docs/face-shape-algorithm.md) — technical documentation of the scoring algorithm
