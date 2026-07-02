@@ -27,7 +27,7 @@ What actually happened.
 
 ## Environment
 
-- SDK version: [e.g., 2.0.0]
+- SDK version: [e.g., 0.2.0]
 - Package: [e.g., @visutry/tryon-web]
 - Browser: [e.g., Chrome 120, Safari 17]
 - OS: [e.g., macOS 14, Windows 11]

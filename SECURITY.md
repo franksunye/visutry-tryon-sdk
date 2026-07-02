@@ -38,5 +38,5 @@ The following are **not** security vulnerabilities:
 
 | Version | Supported |
 |---------|-----------|
-| 2.0.x   | Yes       |
-| < 2.0   | No        |
+| 0.2.x   | Yes       |
+| < 0.2   | No        |

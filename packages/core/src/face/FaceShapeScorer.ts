@@ -8,7 +8,7 @@ import type {
 } from "../types/index.js";
 import { FaceMetricsCalculator } from "./FaceMetricsCalculator.js";
 
-export const FACE_SHAPE_SCORER_VERSION = "2.0.0";
+export const FACE_SHAPE_SCORER_VERSION = "0.2.0";
 
 /**
  * All canonical face shapes, in the same order as visutry's CANONICAL_FACE_SHAPES.
@@ -132,7 +132,7 @@ function classifyFaceGeometry(ratios: NonNullable<FaceMetrics["visutry"]>): {
 /**
  * Scores face shapes from geometric metrics.
  *
- * v2.0.0: Exact port of visutry's classifyFaceGeometry algorithm.
+ * v0.2.0: Exact port of visutry's classifyFaceGeometry algorithm.
  * Uses if/else integer scoring on 2D ratios — not bell/softmax.
  * This ensures numerical equivalence with visutry's main site.
  *

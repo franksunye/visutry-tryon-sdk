@@ -1,6 +1,6 @@
 # Face Shape Analysis Algorithm
 
-This document describes the VisuTry face shape analysis algorithm (v2.0.0). The algorithm classifies a face into one of 7 shapes (or `unknown`) using 2D geometric ratios derived from semantic landmarks, integer threshold scoring, and a confidence model based on score margin.
+This document describes the VisuTry face shape analysis algorithm (v0.2.0). The algorithm classifies a face into one of 7 shapes (or `unknown`) using 2D geometric ratios derived from semantic landmarks, integer threshold scoring, and a confidence model based on score margin.
 
 ---
 
@@ -165,7 +165,7 @@ interface FaceShapeResult {
   confidence: number;           // 0.58 - 0.93
   metrics: FaceMetrics;         // Full metrics including visutry ratios
   warnings: FaceQualityWarning[];
-  version: string;              // "2.0.0"
+  version: string;              // "0.2.0"
 }
 
 interface FaceShapeCandidate {
@@ -194,7 +194,7 @@ interface FaceShapeCandidate {
     }
   },
   "warnings": [],
-  "version": "2.0.0"
+  "version": "0.2.0"
 }
 ```
 
@@ -204,7 +204,7 @@ interface FaceShapeCandidate {
 
 The `FACE_SHAPE_SCORER_VERSION` constant tracks algorithm changes:
 
-- **v2.0.0** — Exact port of visutry's `classifyFaceGeometry`. Integer threshold scoring on 2D ratios. Numerical equivalence with visutry main site.
+- **v0.2.0** — Exact port of visutry's `classifyFaceGeometry`. Integer threshold scoring on 2D ratios. Numerical equivalence with visutry main site.
 - **v1.0.0** — Bell function + softmax scoring on 3D ratios. Superseded.
 
 ---
@@ -219,7 +219,7 @@ const result = scorer.score(normalizedFaceResult);
 
 console.log(result.primary);     // "round"
 console.log(result.confidence);  // 0.82
-console.log(result.version);     // "2.0.0"
+console.log(result.version);     // "0.2.0"
 ```
 
 For image-only analysis without a camera:

@@ -9,7 +9,7 @@ describe("FaceShapeScorer", () => {
     const face = buildFaceResult(buildSemanticPoints("oval"));
     const result = scorer.score(face);
     expect(result.candidates.length).toBe(7);
-    expect(result.version).toBe("2.0.0");
+    expect(result.version).toBe("0.2.0");
     expect(result.metrics).toBeDefined();
     expect(result.confidence).toBeGreaterThanOrEqual(0);
   });

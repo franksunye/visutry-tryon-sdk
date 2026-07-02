@@ -1,6 +1,6 @@
 {
   "name": "visutry-tryon-sdk",
-  "version": "2.0.0",
+  "version": "0.2.0",
   "private": true,
   "description": "VisuTry Face Geometry & AR Glasses Try-On SDK — H5 / WeChat Mini Program. On-device face shape analysis and real-time AR glasses try-on.",
   "license": "MIT",
