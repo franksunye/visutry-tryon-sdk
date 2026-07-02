@@ -1,0 +1,129 @@
+import { midpoint } from "../utils/math.js";
+/**
+ * Default MediaPipe Face Landmarker (468/478 point topology) index map, as
+ * specified in the SDK spec §10.1.
+ */
+export const MEDIAPIPE_SEMANTIC_INDEX_MAP = {
+    leftEyeOuter: 33,
+    leftEyeInner: 133,
+    rightEyeInner: 362,
+    rightEyeOuter: 263,
+    noseBridge: 168,
+    noseTip: 1,
+    leftBrowCenter: 105,
+    rightBrowCenter: 334,
+    foreheadCenter: 10,
+    chin: 152,
+    leftCheek: 123,
+    rightCheek: 352,
+    leftJaw: 172,
+    rightJaw: 397,
+    // visutry additions — used for richer face shape classification
+    leftFace: 234,
+    rightFace: 454,
+    leftForehead: 103,
+    rightForehead: 332,
+    noseLeft: 98,
+    noseRight: 327,
+};
+/**
+ * Maps raw tracker landmarks onto the stable `FaceSemanticPoints` contract.
+ *
+ * This class is intentionally side-effect free and tracker-agnostic: it only
+ * needs an index map describing where each semantic point lives in the raw
+ * array. The web adapter passes the MediaPipe map; the WeChat adapter passes a
+ * custom map or relies on direct construction.
+ */
+export class FaceSemanticMapper {
+    constructor(options = {}) {
+        Object.defineProperty(this, "indexMap", {
+            enumerable: true,
+            configurable: true,
+            writable: true,
+            value: void 0
+        });
+        Object.defineProperty(this, "deriveCenters", {
+            enumerable: true,
+            configurable: true,
+            writable: true,
+            value: void 0
+        });
+        this.indexMap = options.indexMap ?? MEDIAPIPE_SEMANTIC_INDEX_MAP;
+        this.deriveCenters = options.deriveCenters ?? true;
+    }
+    /**
+     * Build a `FaceSemanticPoints` from a raw normalized landmark array.
+     * Missing indices or undefined landmarks are silently skipped — downstream
+     * consumers must tolerate optional points.
+     */
+    map(landmarks) {
+        const semantic = {};
+        for (const key of Object.keys(this.indexMap)) {
+            const idx = this.indexMap[key];
+            if (idx === undefined)
+                continue;
+            const pt = landmarks[idx];
+            if (pt && typeof pt.x === "number" && typeof pt.y === "number") {
+                semantic[key] = {
+                    x: pt.x,
+                    y: pt.y,
+                    z: pt.z ?? 0,
+                };
+            }
+        }
+        if (this.deriveCenters) {
+            this.deriveEyeCenters(semantic);
+        }
+        return semantic;
+    }
+    /**
+     * Derive leftEyeCenter, rightEyeCenter and eyesCenter from the outer/inner
+     * eye corners when they are available. These derived points are the backbone
+     * of the glasses pose solver and face metrics.
+     */
+    deriveEyeCenters(semantic) {
+        if (!semantic.leftEyeCenter && semantic.leftEyeOuter && semantic.leftEyeInner) {
+            semantic.leftEyeCenter = midpoint(semantic.leftEyeOuter, semantic.leftEyeInner);
+        }
+        if (!semantic.rightEyeCenter && semantic.rightEyeInner && semantic.rightEyeOuter) {
+            semantic.rightEyeCenter = midpoint(semantic.rightEyeInner, semantic.rightEyeOuter);
+        }
+        if (!semantic.eyesCenter && semantic.leftEyeCenter && semantic.rightEyeCenter) {
+            semantic.eyesCenter = midpoint(semantic.leftEyeCenter, semantic.rightEyeCenter);
+        }
+    }
+    /**
+     * Count how many of the *required* semantic points (for analysis) are present.
+     * Used by the quality gate to emit `MISSING_KEY_POINTS`.
+     */
+    static countMissing(semantic, required = [
+        "leftEyeCenter",
+        "rightEyeCenter",
+        "noseBridge",
+        "chin",
+        "leftCheek",
+        "rightCheek",
+        "leftJaw",
+        "rightJaw",
+    ]) {
+        const missing = [];
+        for (const key of required) {
+            if (!semantic[key])
+                missing.push(key);
+        }
+        return {
+            missing,
+            present: required.length - missing.length,
+            total: required.length,
+        };
+    }
+    /** Convenience factory bound to a specific source's default map. */
+    static forSource(source) {
+        if (source === "mediapipe") {
+            return new FaceSemanticMapper({ indexMap: MEDIAPIPE_SEMANTIC_INDEX_MAP });
+        }
+        // wechat-vk and custom callers must supply their own map at construction.
+        return new FaceSemanticMapper({ indexMap: {} });
+    }
+}
+//# sourceMappingURL=FaceSemanticMapper.js.map

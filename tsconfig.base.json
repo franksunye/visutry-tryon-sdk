@@ -22,7 +22,16 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": false,
-    "useDefineForClassFields": true
+    "useDefineForClassFields": true,
+    "baseUrl": ".",
+    "paths": {
+      "@visutry/tryon-core": ["./packages/core/src/index.ts"],
+      "@visutry/tryon-core/*": ["./packages/core/src/*"],
+      "@visutry/tryon-web": ["./packages/web/src/index.ts"],
+      "@visutry/tryon-web/*": ["./packages/web/src/*"],
+      "@visutry/recommender": ["./packages/recommender/src/index.ts"],
+      "@visutry/recommender/*": ["./packages/recommender/src/*"]
+    }
   },
   "exclude": ["node_modules", "dist", "build", "coverage"]
 }
