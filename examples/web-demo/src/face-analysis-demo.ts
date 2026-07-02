@@ -177,20 +177,26 @@ async function handleFile(file: File): Promise<void> {
     // Run analysis
     const result = await imageAnalyzer.analyzeFaceShapeFromImage(img);
 
-    // Render landmark mesh overlay on the photo
+    // Display report
+    uploadedPhoto.src = imgUrl;
+    showReport(result);
+
+    // Render landmark mesh overlay after the photo is displayed
     const face = imageAnalyzer.getLastFaceResult();
     const landmarkCanvas = document.getElementById("landmark-canvas") as HTMLCanvasElement;
     if (face && landmarkCanvas && face.landmarks.connections) {
       const overlay = new LandmarkOverlay(landmarkCanvas);
-      // Use a small timeout to let the image render first
+      const drawOverlay = () => overlay.renderFromFace(face, img.naturalWidth, img.naturalHeight);
+      // Wait for the photo to render, then draw overlay
       requestAnimationFrame(() => {
-        overlay.renderFromFace(face, img.naturalWidth, img.naturalHeight);
+        requestAnimationFrame(() => {
+          drawOverlay();
+        });
       });
+      // Redraw on resize
+      const ro = new ResizeObserver(() => drawOverlay());
+      ro.observe(landmarkCanvas);
     }
-
-    // Display report
-    uploadedPhoto.src = imgUrl;
-    showReport(result);
 
   } catch (err) {
     console.error("Analysis error:", err);
@@ -223,6 +229,12 @@ function showReport(result: FaceShapeResult): void {
   const confPct = Math.round(result.confidence * 100);
   confidenceBar.style.width = `${confPct}%`;
   confidenceText.textContent = `置信度: ${confPct}%`;
+
+  // Confidence badge
+  const confidenceBadge = document.getElementById("confidence-badge");
+  if (confidenceBadge) {
+    confidenceBadge.textContent = `${confPct}% confidence`;
+  }
 
   // Candidates with bars
   candidatesList.innerHTML = "";
@@ -324,17 +336,17 @@ function showReport(result: FaceShapeResult): void {
     rank.textContent = String(i + 1);
     item.appendChild(rank);
 
-    const nameCol = document.createElement("div");
-    nameCol.style.flex = "1";
+    const content = document.createElement("div");
+    content.className = "rec-content";
     const nameEl = document.createElement("div");
     nameEl.className = "rec-name";
     nameEl.textContent = rec.name;
-    nameCol.appendChild(nameEl);
+    content.appendChild(nameEl);
     const reasonEl = document.createElement("div");
     reasonEl.className = "rec-reason";
     reasonEl.textContent = rec.reason;
-    nameCol.appendChild(reasonEl);
-    item.appendChild(nameCol);
+    content.appendChild(reasonEl);
+    item.appendChild(content);
 
     recommendationsList.appendChild(item);
   });
