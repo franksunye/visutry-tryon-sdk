@@ -1,6 +1,6 @@
 # VisuTry Face Geometry & AR Glasses Try-On SDK
 
-[![CI](https://github.com/visutry/visutry-tryon-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/visutry/visutry-tryon-sdk/actions/workflows/ci.yml)
+[![CI](https://github.com/franksunye/visutry-tryon-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/franksunye/visutry-tryon-sdk/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](https://www.typescriptlang.org/)
 [![Tests](https://img.shields.io/badge/tests-368%20passed-brightgreen.svg)](#testing)

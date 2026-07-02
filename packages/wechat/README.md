@@ -1,6 +1,6 @@
 # @visutry/tryon-wechat
 
-WeChat Mini Program adapter (**experimental**) for the [VisuTry](https://github.com/visutry/visutry-tryon-sdk) AR glasses try-on SDK.
+WeChat Mini Program adapter (**experimental**) for the [VisuTry](https://github.com/franksunye/visutry-tryon-sdk) AR glasses try-on SDK.
 
 It adapts the platform-agnostic core to the WeChat Mini Program runtime using:
 
@@ -63,4 +63,4 @@ await sdk.loadGlasses(glassesManifest);
 
 ## Full documentation
 
-See the monorepo docs: <https://github.com/visutry/visutry-tryon-sdk#readme>
+See the monorepo docs: <https://github.com/franksunye/visutry-tryon-sdk#readme>

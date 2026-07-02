@@ -1,6 +1,6 @@
 # @visutry/tryon-web
 
-Web (H5) adapter for the [VisuTry](https://github.com/visutry/visutry-tryon-sdk) AR glasses try-on SDK.
+Web (H5) adapter for the [VisuTry](https://github.com/franksunye/visutry-tryon-sdk) AR glasses try-on SDK.
 
 It wires the platform-agnostic core to the browser using:
 
@@ -66,4 +66,4 @@ re-export of the core API.
 
 ## Full documentation
 
-See the monorepo docs: <https://github.com/visutry/visutry-tryon-sdk#readme>
+See the monorepo docs: <https://github.com/franksunye/visutry-tryon-sdk#readme>

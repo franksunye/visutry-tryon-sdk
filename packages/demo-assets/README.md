@@ -1,6 +1,6 @@
 # @visutry/demo-assets
 
-Demo glasses manifests and sample assets for the [VisuTry](https://github.com/visutry/visutry-tryon-sdk) SDK.
+Demo glasses manifests and sample assets for the [VisuTry](https://github.com/franksunye/visutry-tryon-sdk) SDK.
 
 ## Contents
 

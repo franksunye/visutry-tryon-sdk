@@ -1,6 +1,6 @@
 # @visutry/recommender
 
-Glasses recommendation engine for the [VisuTry](https://github.com/visutry/visutry-tryon-sdk) SDK.
+Glasses recommendation engine for the [VisuTry](https://github.com/franksunye/visutry-tryon-sdk) SDK.
 
 Given a face-shape analysis result (and optional face metrics / user
 preferences) plus a glasses inventory, it scores each item with a transparent,
@@ -65,4 +65,4 @@ console.log(recommendations[0].item.name, recommendations[0].reasons);
 
 ## Full documentation
 
-See the monorepo docs: <https://github.com/visutry/visutry-tryon-sdk#readme>
+See the monorepo docs: <https://github.com/franksunye/visutry-tryon-sdk#readme>

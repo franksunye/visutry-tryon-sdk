@@ -13,7 +13,7 @@ Thank you for your interest in contributing to VisuTry! This document covers the
 ### Getting Started
 
 ```bash
-git clone https://github.com/visutry/visutry-tryon-sdk.git
+git clone https://github.com/franksunye/visutry-tryon-sdk.git
 cd visutry-tryon-sdk
 pnpm install
 ```
@@ -89,7 +89,7 @@ Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `perf`
 
 ## Reporting Issues
 
-- Use [GitHub Issues](https://github.com/visutry/visutry-tryon-sdk/issues) to report bugs or request features
+- Use [GitHub Issues](https://github.com/franksunye/visutry-tryon-sdk/issues) to report bugs or request features
 - Include the SDK version, browser/platform, and a minimal reproduction
 - For security vulnerabilities, see [SECURITY.md](SECURITY.md) — do not open public issues
 

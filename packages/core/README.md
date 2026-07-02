@@ -1,6 +1,6 @@
 # @visutry/tryon-core
 
-Platform-agnostic core of the [VisuTry](https://github.com/visutry/visutry-tryon-sdk) AR glasses try-on SDK.
+Platform-agnostic core of the [VisuTry](https://github.com/franksunye/visutry-tryon-sdk) AR glasses try-on SDK.
 
 It contains no platform (browser / WeChat) code — only the shared foundation:
 shared types, coordinate-system transforms, face semantic mapping, face metrics,
@@ -55,4 +55,4 @@ try {
 
 ## Full documentation
 
-See the monorepo docs: <https://github.com/visutry/visutry-tryon-sdk#readme>
+See the monorepo docs: <https://github.com/franksunye/visutry-tryon-sdk#readme>
