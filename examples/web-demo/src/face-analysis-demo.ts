@@ -108,7 +108,7 @@ const metricsGrid = $("metrics-grid");
 const qualityCard = $("quality-card");
 const qualityList = $("quality-list");
 const recommendationsList = $("recommendations-list");
-const analyzeAnother = $("analyze-analyze") ?? $("analyze-another");
+const analyzeAnother = $("analyze-another");
 const retryBtn = $("retry-btn");
 const toast = $("toast");
 
@@ -183,7 +183,16 @@ async function handleFile(file: File): Promise<void> {
 
   } catch (err) {
     console.error("Analysis error:", err);
-    const msg = err instanceof Error ? err.message : "Analysis failed";
+    let msg: string;
+    if (err && typeof err === "object" && "code" in err) {
+      const sdkErr = err as { code: string; message?: string; cause?: { message?: string } };
+      msg = `${sdkErr.code}: ${sdkErr.message ?? "Unknown error"}`;
+      if (sdkErr.cause?.message) msg += `\nCause: ${sdkErr.cause.message}`;
+    } else if (err instanceof Error) {
+      msg = err.message;
+    } else {
+      msg = "Analysis failed — please check console for details";
+    }
     showError(msg);
   } finally {
     loadingSection.classList.add("hidden");

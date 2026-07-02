@@ -104,9 +104,15 @@ body {
   padding: 48px 24px;
 }
 .error-section p {
-  font-size: 15px;
+  font-size: 13px;
   color: #ef4444;
   margin-bottom: 16px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  text-align: left;
+  background: #fef2f2;
+  padding: 12px;
+  border-radius: 8px;
 }
 
 /* Report */
