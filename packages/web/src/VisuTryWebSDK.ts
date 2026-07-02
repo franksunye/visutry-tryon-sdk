@@ -167,7 +167,7 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
   private analysisInProgress = false;
 
   // --- Events -------------------------------------------------------------
-  private readonly listeners: Map<EventName, Set<Function>> = new Map();
+  private readonly listeners: Map<EventName, Set<(...args: unknown[]) => void>> = new Map();
 
   // --- Performance --------------------------------------------------------
   private readonly frameTimes: number[] = [];
@@ -494,12 +494,12 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
       set = new Set();
       this.listeners.set(eventName, set);
     }
-    set.add(handler as Function);
+    set.add(handler as (...args: unknown[]) => void);
   }
 
   off<E extends EventName>(eventName: E, handler: EventHandler<E>): void {
     const set = this.listeners.get(eventName);
-    if (set) set.delete(handler as Function);
+    if (set) set.delete(handler as (...args: unknown[]) => void);
   }
 
   // -----------------------------------------------------------------------
