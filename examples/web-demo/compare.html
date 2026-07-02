@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob: https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; connect-src 'self' https://cdn.jsdelivr.net https://storage.googleapis.com https://*.googleapis.com; worker-src 'self' blob:;" />
+  <title>Head-to-Head: SDK v1.2 vs Visutry Algorithm</title>
+  <link rel="stylesheet" href="/src/compare-demo.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="app-header">
+      <h1>Head-to-Head Comparison</h1>
+      <p class="subtitle">SDK v1.2.0 (calibrated) vs Visutry main site algorithm</p>
+    </header>
+
+    <section id="upload-section">
+      <div id="drop-zone" class="drop-zone">
+        <p class="drop-zone-text">Click or drag a photo here</p>
+        <p class="drop-zone-hint">Same photo → both algorithms → side-by-side results</p>
+        <input type="file" id="file-input" accept="image/*" hidden />
+      </div>
+    </section>
+
+    <section id="loading-section" class="hidden">
+      <div class="spinner"></div>
+      <p id="loading-message">Analyzing...</p>
+    </section>
+
+    <section id="compare-section" class="hidden">
+      <div class="photo-row">
+        <img id="uploaded-photo" alt="Analyzed photo" />
+      </div>
+
+      <div class="compare-grid">
+        <!-- SDK Column -->
+        <div class="compare-col sdk-col">
+          <div class="col-header">
+            <span class="col-badge sdk-badge">SDK v1.2.0</span>
+          </div>
+          <div class="result-primary" id="sdk-primary">—</div>
+          <div class="result-confidence" id="sdk-confidence">—</div>
+          <div id="sdk-candidates" class="candidates"></div>
+          <div class="metrics-section">
+            <h3>Key Metrics</h3>
+            <div id="sdk-metrics" class="metrics"></div>
+          </div>
+          <div class="warnings-section" id="sdk-warnings-section">
+            <h3>Warnings</h3>
+            <ul id="sdk-warnings" class="warnings"></ul>
+          </div>
+        </div>
+
+        <!-- Visutry Column -->
+        <div class="compare-col visutry-col">
+          <div class="col-header">
+            <span class="col-badge visutry-badge">Visutry Algorithm</span>
+          </div>
+          <div class="result-primary" id="visutry-primary">—</div>
+          <div class="result-confidence" id="visutry-confidence">—</div>
+          <div id="visutry-signals" class="signals"></div>
+          <div class="metrics-section">
+            <h3>Key Ratios</h3>
+            <div id="visutry-metrics" class="metrics"></div>
+          </div>
+          <div class="warnings-section" id="visutry-warnings-section">
+            <h3>Warnings</h3>
+            <ul id="visutry-warnings" class="warnings"></ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Comparison Summary -->
+      <div class="summary-card">
+        <h2>Comparison Summary</h2>
+        <div id="summary-content" class="summary-content"></div>
+      </div>
+
+      <div class="actions">
+        <button id="analyze-another" class="btn-primary">Compare Another Photo</button>
+      </div>
+    </section>
+
+    <div id="toast" class="toast hidden"></div>
+  </div>
+  <script type="module" src="/src/compare-demo.ts"></script>
+</body>
+</html>

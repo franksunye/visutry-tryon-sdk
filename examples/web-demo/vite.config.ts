@@ -21,6 +21,7 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, "index.html"),
         "face-analysis": resolve(__dirname, "face-analysis.html"),
+        "compare": resolve(__dirname, "compare.html"),
       },
       output: {
         manualChunks: {
