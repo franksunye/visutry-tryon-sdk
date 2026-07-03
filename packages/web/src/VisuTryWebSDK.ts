@@ -43,6 +43,14 @@ import { MediaPipeFaceTracker } from "./tracker/MediaPipeFaceTracker.js";
 import { WebCameraProvider } from "./camera/WebCameraProvider.js";
 import { ThreeJsRenderer } from "./renderer/ThreeJsRenderer.js";
 
+// Re-export the ImageAnalyzer (extracted to its own module so that
+// `@visutry/tryon-web/analyzer` subpath export does not pull in Three.js).
+export {
+  createVisuTryImageAnalyzer,
+  type ImageAnalyzer,
+  type ImageAnalysisResult,
+} from "./ImageAnalyzer.js";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -74,65 +82,6 @@ export interface VisuTryWebSDKFactoryOptions extends VisuTrySDKConfig {
  */
 export function createVisuTryWebSDK(options: VisuTryWebSDKFactoryOptions): VisuTrySDK {
   return new VisuTryWebSDKImpl(options);
-}
-
-/**
- * Create a lightweight SDK instance for **image-only** face shape analysis.
- * Does NOT require a canvas or Three.js renderer — only loads MediaPipe.
- *
- * Usage:
- * ```ts
- * const sdk = createVisuTryImageAnalyzer();
- * const img = new Image();
- * img.src = 'photo.jpg';
- * await img.decode();
- * const result = await sdk.analyzeFaceShapeFromImage(img);
- * // For landmark overlay:
- * const face = sdk.getLastFaceResult();
- * ```
- */
-export interface ImageAnalyzer {
-  analyzeFaceShapeFromImage(image: unknown): Promise<FaceShapeResult>;
-  /** Returns the last detected face result (for landmark overlay rendering). */
-  getLastFaceResult(): NormalizedFaceResult | null;
-  destroy(): void;
-}
-
-export function createVisuTryImageAnalyzer(
-  options?: MediaPipeTrackerOptions,
-): ImageAnalyzer {
-  const tracker = new MediaPipeFaceTracker(options ?? {}, { mode: "balanced" });
-  const scorer = new FaceShapeScorer();
-  const qualityGate = new QualityGate();
-  let destroyed = false;
-  let lastFace: NormalizedFaceResult | null = null;
-
-  return {
-    async analyzeFaceShapeFromImage(image: unknown): Promise<FaceShapeResult> {
-      if (destroyed) {
-        throw createSDKError("UNKNOWN", "Image analyzer has been destroyed");
-      }
-      const face = await tracker.detectImage(image);
-      if (!face) {
-        throw createSDKError("UNKNOWN", "No face detected in the provided image");
-      }
-      lastFace = face;
-      const gate = qualityGate.evaluate({ face, mode: "analysis" });
-      const result = scorer.scoreFrames([face]);
-      if (gate.warnings.length > 0) {
-        const merged = [...new Set([...result.warnings, ...gate.warnings])];
-        return { ...result, warnings: merged };
-      }
-      return result;
-    },
-    getLastFaceResult(): NormalizedFaceResult | null {
-      return lastFace;
-    },
-    destroy(): void {
-      destroyed = true;
-      tracker.destroy();
-    },
-  };
 }
 
 // ---------------------------------------------------------------------------

@@ -1,8 +1,38 @@
 {
   "name": "@visutry/tryon-web",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Web (H5) adapter for VisuTry SDK: getUserMedia camera, MediaPipe FaceLandmarker, Three.js renderer and SDK facade.",
   "license": "MIT",
+  "keywords": [
+    "ar",
+    "try-on",
+    "glasses",
+    "face",
+    "face-shape",
+    "face-analysis",
+    "landmark",
+    "mediapipe",
+    "threejs",
+    "webgl",
+    "computer-vision",
+    "augmented-reality",
+    "virtual-tryon",
+    "on-device",
+    "privacy",
+    "h5",
+    "typescript",
+    "sdk",
+    "visutry"
+  ],
+  "homepage": "https://github.com/franksunye/visutry-tryon-sdk#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/franksunye/visutry-tryon-sdk.git",
+    "directory": "packages/web"
+  },
+  "bugs": {
+    "url": "https://github.com/franksunye/visutry-tryon-sdk/issues"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -11,6 +41,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./analyzer": {
+      "types": "./dist/ImageAnalyzer.d.ts",
+      "import": "./dist/ImageAnalyzer.js"
+    },
+    "./overlay": {
+      "types": "./dist/overlay/LandmarkOverlay.d.ts",
+      "import": "./dist/overlay/LandmarkOverlay.js"
     }
   },
   "files": [

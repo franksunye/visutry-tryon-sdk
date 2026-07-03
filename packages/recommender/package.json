@@ -1,8 +1,31 @@
 {
   "name": "@visutry/recommender",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Glasses recommendation engine for VisuTry SDK: face-shape x frame matching, millimeter-level size recommendation, preference scoring.",
   "license": "MIT",
+  "keywords": [
+    "glasses",
+    "recommendation",
+    "face-shape",
+    "frame-matching",
+    "sizing",
+    "try-on",
+    "face-analysis",
+    "augmented-reality",
+    "virtual-tryon",
+    "typescript",
+    "sdk",
+    "visutry"
+  ],
+  "homepage": "https://github.com/franksunye/visutry-tryon-sdk#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/franksunye/visutry-tryon-sdk.git",
+    "directory": "packages/recommender"
+  },
+  "bugs": {
+    "url": "https://github.com/franksunye/visutry-tryon-sdk/issues"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",

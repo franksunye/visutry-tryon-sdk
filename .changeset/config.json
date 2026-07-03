@@ -7,5 +7,5 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": ["@visutry/demo-assets", "web-demo", "wechat-demo"]
+  "ignore": ["@visutry/demo-assets"]
 }

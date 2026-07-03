@@ -1,6 +1,8 @@
 # VisuTry Face Geometry & AR Glasses Try-On SDK
 
 [![CI](https://github.com/franksunye/visutry-tryon-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/franksunye/visutry-tryon-sdk/actions/workflows/ci.yml)
+[![Release](https://github.com/franksunye/visutry-tryon-sdk/actions/workflows/release.yml/badge.svg)](https://github.com/franksunye/visutry-tryon-sdk/actions/workflows/release.yml)
+[![npm version](https://img.shields.io/npm/v/@visutry/tryon-core.svg)](https://www.npmjs.com/package/@visutry/tryon-core)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D20-green.svg)](https://nodejs.org/)
@@ -12,6 +14,8 @@
 [![Platform](https://img.shields.io/badge/platform-H5%20%7C%20WeChat-blue.svg)](#package-structure)
 [![Privacy](https://img.shields.io/badge/privacy-on--device-success.svg)](docs/privacy.md)
 [![Code Style](https://img.shields.io/badge/code%20style-prettier-ff69b4.svg)](https://prettier.io/)
+
+[**Live Demo**](https://www.visutry.com) · [**API Docs**](https://franksunye.github.io/visutry-tryon-sdk/) · [**npm Packages**](https://www.npmjs.com/org/visutry)
 
 On-device face geometry analysis and AR glasses try-on SDK for **web (H5)** and **WeChat Mini Program**. All face processing happens locally — no images or landmarks are sent to a server.
 
@@ -139,6 +143,7 @@ overlay.renderFromFace(face, img.naturalWidth, img.naturalHeight);
 
 ## Documentation
 
+- [**API Reference**](https://franksunye.github.io/visutry-tryon-sdk/) — auto-generated TypeDoc API documentation
 - [Getting Started](docs/getting-started.md)
 - [Web (H5) Integration Guide](docs/web-integration.md)
 - [WeChat Mini Program Integration](docs/wechat-integration.md)
@@ -146,6 +151,7 @@ overlay.renderFromFace(face, img.naturalWidth, img.naturalHeight);
 - [Face Shape Analysis Algorithm](docs/face-shape-algorithm.md)
 - [Privacy Model](docs/privacy.md)
 - [Performance Guide](docs/performance.md)
+- [CHANGELOG](packages/core/CHANGELOG.md) — per-package release history
 
 ## Tech Stack
 
@@ -179,5 +185,8 @@ VisuTry processes all face data on-device. See [SECURITY.md](SECURITY.md) for vu
 
 ## Links
 
-- [VisuTry Online Face Shape Detector](https://www.visutry.com/en/face-shape-detector) — the production web application powered by this SDK's face shape analysis algorithm
+- [**VisuTry**](https://www.visutry.com) — the production web application powered by this SDK
+- [VisuTry Online Face Shape Detector](https://www.visutry.com/en/face-shape-detector) — face shape analysis powered by this SDK's algorithm
+- [API Reference](https://franksunye.github.io/visutry-tryon-sdk/) — TypeDoc-generated API documentation
+- [npm Organization](https://www.npmjs.com/org/visutry) — `@visutry` scoped packages
 - [Face Shape Analysis Algorithm](docs/face-shape-algorithm.md) — technical documentation of the scoring algorithm

@@ -1,8 +1,35 @@
 {
   "name": "@visutry/tryon-core",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Platform-agnostic core for VisuTry SDK: types, coordinate transforms, face semantic mapping, face metrics, face shape scoring, glasses pose solver, pose smoothing, quality gate.",
   "license": "MIT",
+  "keywords": [
+    "ar",
+    "try-on",
+    "glasses",
+    "face",
+    "face-shape",
+    "face-analysis",
+    "landmark",
+    "mediapipe",
+    "computer-vision",
+    "augmented-reality",
+    "virtual-tryon",
+    "on-device",
+    "privacy",
+    "typescript",
+    "sdk",
+    "visutry"
+  ],
+  "homepage": "https://github.com/franksunye/visutry-tryon-sdk#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/franksunye/visutry-tryon-sdk.git",
+    "directory": "packages/core"
+  },
+  "bugs": {
+    "url": "https://github.com/franksunye/visutry-tryon-sdk/issues"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -11,9 +38,36 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./face": {
+      "types": "./dist/face/FaceShapeScorer.d.ts",
+      "import": "./dist/face/FaceShapeScorer.js"
+    },
+    "./pose": {
+      "types": "./dist/pose/GlassesPoseSolver.d.ts",
+      "import": "./dist/pose/GlassesPoseSolver.js"
+    },
+    "./quality": {
+      "types": "./dist/quality/QualityGate.d.ts",
+      "import": "./dist/quality/QualityGate.js"
+    },
+    "./privacy": {
+      "types": "./dist/privacy/PrivacyGuard.d.ts",
+      "import": "./dist/privacy/PrivacyGuard.js"
+    },
+    "./manifest": {
+      "types": "./dist/manifest/ManifestValidator.d.ts",
+      "import": "./dist/manifest/ManifestValidator.js"
+    },
+    "./smoothing": {
+      "types": "./dist/smoothing/PoseSmoothing.d.ts",
+      "import": "./dist/smoothing/PoseSmoothing.js"
     }
   },
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "dev": "tsc -p tsconfig.build.json --watch",

@@ -11,5 +11,5 @@
   "excludeProtected": true,
   "excludeExternals": true,
   "includeVersion": true,
-  "githubPages": false
+  "githubPages": true
 }

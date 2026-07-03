@@ -1,8 +1,35 @@
 {
   "name": "@visutry/tryon-wechat",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "WeChat Mini Program adapter (experimental) for VisuTry SDK: camera, visionkit face tracker, offscreen-canvas renderer.",
   "license": "MIT",
+  "keywords": [
+    "ar",
+    "try-on",
+    "glasses",
+    "face",
+    "face-shape",
+    "landmark",
+    "weixin",
+    "miniprogram",
+    "wechat",
+    "augmented-reality",
+    "virtual-tryon",
+    "on-device",
+    "privacy",
+    "typescript",
+    "sdk",
+    "visutry"
+  ],
+  "homepage": "https://github.com/franksunye/visutry-tryon-sdk#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/franksunye/visutry-tryon-sdk.git",
+    "directory": "packages/wechat"
+  },
+  "bugs": {
+    "url": "https://github.com/franksunye/visutry-tryon-sdk/issues"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
