@@ -1,6 +1,6 @@
 {
   "name": "@visutry/tryon-web",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Web (H5) adapter for VisuTry SDK: getUserMedia camera, MediaPipe FaceLandmarker, Three.js renderer and SDK facade.",
   "license": "MIT",
   "type": "module",
@@ -13,7 +13,10 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "dev": "tsc -p tsconfig.build.json --watch",
@@ -22,8 +25,7 @@
     "prepublishOnly": "pnpm build"
   },
   "publishConfig": {
-    "access": "public",
-    "provenance": true
+    "access": "public"
   },
   "sideEffects": false,
   "engines": {
