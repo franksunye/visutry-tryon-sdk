@@ -4,6 +4,7 @@
     "packages/web/src/index.ts",
     "packages/recommender/src/index.ts"
   ],
+  "tsconfig": "tsconfig.base.json",
   "out": "docs/api",
   "name": "VisuTry SDK API Reference",
   "readme": "README.md",
@@ -11,5 +12,6 @@
   "excludeProtected": true,
   "excludeExternals": true,
   "includeVersion": true,
-  "githubPages": true
+  "githubPages": true,
+  "exclude": ["node_modules/**", "**/node_modules/**"]
 }
