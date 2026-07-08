@@ -21,6 +21,16 @@ for pkg in "${PACKAGES[@]}"; do
   echo "📦 Publishing $PKG_NAME@$PKG_VERSION with --provenance..."
   (cd "$PKG_DIR" && npm publish --provenance --access public)
   echo "✅ Published $PKG_NAME@$PKG_VERSION"
+
+  # Tag the release in git
+  TAG="v${PKG_VERSION}"
+  if git rev-parse "$TAG" >/dev/null 2>&1; then
+    echo "⏭️  Tag $TAG already exists, skipping"
+  else
+    git tag "$TAG"
+    git push origin "$TAG"
+    echo "🏷️  Created and pushed tag $TAG"
+  fi
 done
 
 echo "🎉 All packages published."

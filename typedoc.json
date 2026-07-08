@@ -13,5 +13,8 @@
   "excludeExternals": true,
   "includeVersion": true,
   "githubPages": true,
-  "exclude": ["node_modules/**", "**/node_modules/**"]
+  "exclude": ["node_modules/**", "**/node_modules/**"],
+  "sourceLinkExternal": false,
+  "disableSources": false,
+  "cleanOutputDir": true
 }

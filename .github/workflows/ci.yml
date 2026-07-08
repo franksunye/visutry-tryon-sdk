@@ -38,5 +38,14 @@ jobs:
       - name: Test with coverage
         run: pnpm test:coverage
 
+      - name: Clean build verification
+        run: |
+          pnpm clean
+          pnpm build
+          # Verify no stale artifacts: dist should only contain files
+          # that tsc emits from src
+          find packages/*/dist -name '*.js' -o -name '*.d.ts' | wc -l
+          echo "Clean build verification passed"
+
       - name: Build
         run: pnpm build

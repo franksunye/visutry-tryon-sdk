@@ -87,6 +87,39 @@ Optional longer description.
 
 Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `perf`
 
+## Release Process
+
+The SDK uses [Changesets](https://github.com/changesets/changesets) for version management and npm OIDC Trusted Publishing for automated, tokenless releases.
+
+### How Releases Work
+
+1. **Create a changeset** — When making changes that affect published packages, run:
+
+   ```bash
+   pnpm changeset
+   ```
+
+   Select the affected packages, choose bump type (patch/minor/major), and write a summary. This creates a `.changeset/*.md` file that should be committed with your PR.
+
+2. **Version PR** — When a changeset is merged to `main`, the Release workflow automatically opens a "Version Packages" PR that bumps versions and updates CHANGELOGs. Merge this PR to trigger a release.
+
+3. **Automatic publish** — Pushing to `main` (including merging the version PR) triggers the Release workflow which:
+   - Builds all packages
+   - Publishes to npm via OIDC Trusted Publishing (no tokens stored in GitHub)
+   - Creates git tags for each released version
+
+4. **Manual trigger** — The Release workflow can also be triggered manually from the GitHub Actions tab (`workflow_dispatch`).
+
+### OIDC Trusted Publishing
+
+npm packages are published using [OIDC Trusted Publishing](https://docs.npmjs.com/generating-provenance-statements) — no `NPM_TOKEN` secret is stored in GitHub. Each package's npm page has a Trusted Publisher configured for `franksunye/visutry-tryon-sdk` with workflow `release.yml`.
+
+### What Not to Do
+
+- Do not manually run `npm publish` — releases go through CI only
+- Do not manually edit `package.json` versions or `CHANGELOG.md` — use changesets
+- Do not create git tags manually — the publish script handles tagging
+
 ## Reporting Issues
 
 - Use [GitHub Issues](https://github.com/franksunye/visutry-tryon-sdk/issues) to report bugs or request features

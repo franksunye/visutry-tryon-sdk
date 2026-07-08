@@ -4,10 +4,10 @@
 [![Release](https://github.com/franksunye/visutry-tryon-sdk/actions/workflows/release.yml/badge.svg)](https://github.com/franksunye/visutry-tryon-sdk/actions/workflows/release.yml)
 [![npm version](https://img.shields.io/npm/v/@visutry/tryon-core.svg)](https://www.npmjs.com/package/@visutry/tryon-core)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](https://www.typescriptlang.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D20-green.svg)](https://nodejs.org/)
 [![pnpm](https://img.shields.io/badge/pnpm-10-orange.svg)](https://pnpm.io/)
-[![Tests](https://img.shields.io/badge/tests-368%20passed-brightgreen.svg)](#testing)
+[![Tests](https://github.com/franksunye/visutry-tryon-sdk/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/franksunye/visutry-tryon-sdk/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/badge/coverage-%3E80%25-brightgreen.svg)](#testing)
 [![MediaPipe](https://img.shields.io/badge/MediaPipe-FaceLandmarker-orange.svg)](https://developers.google.com/mediapipe)
 [![Three.js](https://img.shields.io/badge/Three.js-0.170-black.svg)](https://threejs.org/)
@@ -164,7 +164,7 @@ overlay.renderFromFace(face, img.naturalWidth, img.naturalHeight);
 
 ## Testing
 
-The SDK maintains 368 unit tests across all packages with an 80% coverage threshold enforced in CI.
+The SDK maintains comprehensive unit tests across all packages with an 80% coverage threshold enforced in CI.
 
 ```bash
 pnpm test           # Run all tests

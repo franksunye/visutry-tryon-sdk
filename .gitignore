@@ -18,6 +18,9 @@ packages/*/src/**/*.d.ts.map
 coverage/
 .vitest/
 
+# TypeDoc API docs (regenerated in CI, not committed)
+docs/api/
+
 # Editor / OS
 .DS_Store
 .idea/
