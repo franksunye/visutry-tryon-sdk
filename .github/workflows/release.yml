@@ -40,15 +40,17 @@ jobs:
       - name: Remove empty authToken for OIDC
         run: npm config delete //registry.npmjs.org/:_authToken
 
-      - name: Create Release Pull Request or Publish
-        id: changesets
+      - name: Publish packages via OIDC trusted publishing
+        run: bash scripts/publish-oidc.sh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create version PR if there are pending changesets
         uses: changesets/action@v1
         with:
-          publish: npx changeset publish
+          publish: false
           version: npx changeset version
           title: "chore(release): version packages"
           commit: "chore(release): version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Force provenance via env var so changeset publish's child npm process picks it up
-          NPM_CONFIG_PROVENANCE: "true"
