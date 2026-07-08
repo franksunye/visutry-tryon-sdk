@@ -51,7 +51,18 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Check for pending changesets
+        id: check-changesets
+        run: |
+          if ls .changeset/*.md 2>/dev/null | grep -q .; then
+            echo "has-changesets=true" >> $GITHUB_OUTPUT
+          else
+            echo "has-changesets=false" >> $GITHUB_OUTPUT
+            echo "No pending changesets, skipping version PR"
+          fi
+
       - name: Create version PR if there are pending changesets
+        if: steps.check-changesets.outputs.has-changesets == 'true'
         uses: changesets/action@v1
         with:
           publish: false
