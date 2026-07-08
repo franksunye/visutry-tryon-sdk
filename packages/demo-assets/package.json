@@ -3,6 +3,7 @@
   "version": "0.2.0",
   "description": "Demo glasses manifests and sample assets for VisuTry SDK",
   "license": "MIT",
+  "private": true,
   "type": "module",
   "files": [
     "glasses",
