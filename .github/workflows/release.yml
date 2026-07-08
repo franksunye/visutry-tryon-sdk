@@ -37,12 +37,8 @@ jobs:
       - name: Build
         run: pnpm build
 
-      - name: Configure npm for OIDC trusted publishing
-        run: |
-          # Remove the empty _authToken that setup-node wrote (blocks OIDC)
-          npm config delete //registry.npmjs.org/:_authToken
-          # Enable provenance for trusted publishing
-          npm config set provenance true
+      - name: Remove empty authToken for OIDC
+        run: npm config delete //registry.npmjs.org/:_authToken
 
       - name: Create Release Pull Request or Publish
         id: changesets
@@ -54,3 +50,5 @@ jobs:
           commit: "chore(release): version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Force provenance via env var so changeset publish's child npm process picks it up
+          NPM_CONFIG_PROVENANCE: "true"
