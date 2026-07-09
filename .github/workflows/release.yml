@@ -33,7 +33,7 @@ jobs:
 
       - name: Upgrade npm for full OIDC trusted publishing support
         run: |
-          npm install -g npm@latest
+          npm install -g npm@latest sigstore
           echo "npm version: $(npm --version)"
 
       - name: Configure npm for OIDC
