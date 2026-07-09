@@ -1,6 +1,6 @@
 {
   "name": "@visutry/tryon-web",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Web (H5) adapter for VisuTry SDK: getUserMedia camera, MediaPipe FaceLandmarker, Three.js renderer and SDK facade.",
   "license": "MIT",
   "keywords": [

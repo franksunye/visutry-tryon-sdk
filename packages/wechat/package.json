@@ -1,6 +1,6 @@
 {
   "name": "@visutry/tryon-wechat",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "WeChat Mini Program adapter (experimental) for VisuTry SDK: camera, visionkit face tracker, offscreen-canvas renderer.",
   "license": "MIT",
   "keywords": [
