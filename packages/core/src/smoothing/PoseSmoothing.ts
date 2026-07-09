@@ -73,7 +73,13 @@ export class PoseSmoother {
     if (elapsed < this.config.lostTrackingDelayMs) {
       // Hold the last pose, keep it visible (no flicker).
       this.lost = false;
-      return { ...this.lastPose, visible: true };
+      return {
+        ...this.lastPose,
+        position: { ...this.lastPose.position },
+        rotation: { ...this.lastPose.rotation },
+        scale: { ...this.lastPose.scale },
+        visible: this.lastPose.visible,
+      };
     }
 
     // Grace period over: fade out.
@@ -98,11 +104,16 @@ export class PoseSmoother {
       rotation,
       scale,
       visible: true,
-      confidence: lerp(last.confidence, raw.confidence, t.rotationLerp),
+      confidence: lerp(last.confidence, raw.confidence, t.scaleLerp),
       reason: raw.reason,
     };
 
-    this.lastPose = { ...smoothed };
+    this.lastPose = {
+      ...smoothed,
+      position: { ...smoothed.position },
+      rotation: { ...smoothed.rotation },
+      scale: { ...smoothed.scale },
+    };
     return smoothed;
   }
 

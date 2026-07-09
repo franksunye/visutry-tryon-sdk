@@ -12,6 +12,8 @@ import { distance2D, distance3D, median, trimmedMean, clamp01 } from "../utils/m
  *  - Multi-frame analysis aggregates via median (distances) / trimmed mean (ratios).
  */
 export class FaceMetricsCalculator {
+  private static readonly KEY_POINT_COUNT = 23;
+
   /**
    * Compute metrics for a single normalized face result.
    */
@@ -344,7 +346,7 @@ export class FaceMetricsCalculator {
 
   private computeQuality(present: number, s: FaceSemanticPoints): number {
     // Base quality from coverage of 23 key points.
-    const coverage = clamp01(present / 23);
+    const coverage = clamp01(present / FaceMetricsCalculator.KEY_POINT_COUNT);
 
     // Critical points weight: eyes, noseBridge, chin, cheeks, jaw are essential.
     const critical: (keyof FaceSemanticPoints)[] = [
@@ -428,6 +430,22 @@ export class FaceMetricsCalculator {
       jawCheekRatio: 0,
       chinType: "unknown",
       measurementQuality: 0,
+      foreheadWidth: 0,
+      faceOutlineWidth: 0,
+      noseBridgeWidth: 0,
+      foreheadCheekRatio: 0,
+      eyeLineTiltDeg: 0,
+      symmetryOffset: 0,
+      faceSpan: 0,
+      visutry: {
+        faceAspectRatio: 0,
+        cheekToFaceWidth: 0,
+        jawToCheekWidth: 0,
+        foreheadToCheekWidth: 0,
+        eyeLineTiltDeg: 0,
+        symmetryOffset: 0,
+        noseBridgeToFaceWidth: 0,
+      },
     };
   }
 }

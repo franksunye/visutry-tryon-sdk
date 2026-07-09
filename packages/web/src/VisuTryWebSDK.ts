@@ -125,6 +125,9 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
   private trackingLostCount = 0;
   private lastFaceDetected = false;
   private lastPerformanceEmit = 0;
+  private consecutiveErrors = 0;
+  private static readonly MAX_CONSECUTIVE_ERRORS = 10;
+  private visibilityHandler: (() => void) | null = null;
 
   // --- Analysis -----------------------------------------------------------
   private analysisTargetFrames = 8;
@@ -208,6 +211,8 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
     this.tryOnRunning = true;
     this.smoother.reset();
     this.lastFaceDetected = false;
+    this.consecutiveErrors = 0;
+    this.setupVisibilityHandler();
     this.loop();
   }
 
@@ -217,6 +222,7 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
       cancelAnimationFrame(this.rafId);
       this.rafId = null;
     }
+    this.teardownVisibilityHandler();
     this.renderer.setVisible(false);
   }
 
@@ -333,7 +339,9 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
     // If quality gate produced warnings, append them to the result.
     if (gate.warnings.length > 0) {
       const merged = [...new Set([...result.warnings, ...gate.warnings])];
-      return { ...result, warnings: merged };
+      const resultWithWarnings = { ...result, warnings: merged };
+      this.emit("faceShapeAnalyzed", resultWithWarnings);
+      return resultWithWarnings;
     }
 
     this.emit("faceShapeAnalyzed", result);
@@ -487,6 +495,48 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
   }
 
   // -----------------------------------------------------------------------
+  // Visibility management
+  // -----------------------------------------------------------------------
+
+  /**
+   * When the user switches tabs, RAF stops but the camera stream continues.
+   * This handler pauses the try-on loop and stops the camera to save battery
+   * and bandwidth. On return, it resumes both.
+   */
+  private setupVisibilityHandler(): void {
+    if (this.visibilityHandler) return;
+    this.visibilityHandler = () => {
+      if (document.hidden) {
+        // Tab hidden: cancel RAF and stop camera stream.
+        if (this.rafId !== null) {
+          cancelAnimationFrame(this.rafId);
+          this.rafId = null;
+        }
+        this.camera.stop();
+      } else {
+        // Tab visible again: restart camera and resume loop.
+        if (this.tryOnRunning && !this.destroyed) {
+          this.camera.start().then(() => {
+            this.smoother.reset();
+            this.consecutiveErrors = 0;
+            this.loop();
+          }).catch((err) => {
+            this.emitError(err);
+          });
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", this.visibilityHandler);
+  }
+
+  private teardownVisibilityHandler(): void {
+    if (this.visibilityHandler) {
+      document.removeEventListener("visibilitychange", this.visibilityHandler);
+      this.visibilityHandler = null;
+    }
+  }
+
+  // -----------------------------------------------------------------------
   // Tracking / render loop
   // -----------------------------------------------------------------------
 
@@ -531,21 +581,33 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
       }
     }).catch((err) => {
       this.emitError(err);
+      this.consecutiveErrors++;
+      if (this.consecutiveErrors >= VisuTryWebSDKImpl.MAX_CONSECUTIVE_ERRORS) {
+        // Circuit breaker: stop the loop after too many persistent failures.
+        console.error("[VisuTrySDK]", `Tracking loop stopped after ${this.consecutiveErrors} consecutive errors.`);
+        this.emit("error", createSDKError("UNKNOWN", "Tracking loop stopped due to persistent failures."));
+        this.tryOnRunning = false;
+        return;
+      }
       if (this.tryOnRunning && !this.destroyed) {
-        this.rafId = requestAnimationFrame(this.loop);
+        // Backoff: wait longer as errors accumulate before retrying.
+        const backoffMs = Math.min(1000 * this.consecutiveErrors, 5000);
+        setTimeout(() => {
+          if (this.tryOnRunning && !this.destroyed) {
+            this.rafId = requestAnimationFrame(this.loop);
+          }
+        }, backoffMs);
       }
     });
   };
 
   private handleFaceDetected(face: NormalizedFaceResult): void {
     this.emit("faceDetected", face);
+    this.consecutiveErrors = 0;
 
     if (!this.lastFaceDetected) {
       this.lastFaceDetected = true;
     }
-
-    // Quality gate in tryon mode.
-    const gate = this.qualityGate.evaluate({ face, mode: "tryon" });
 
     if (this.currentAsset) {
       const rawPose = this.poseSolver.solve({
@@ -557,9 +619,6 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
       this.renderer.applyPose(smoothedPose);
       this.emit("poseUpdated", smoothedPose);
     }
-
-    // Suppress unused var warning — gate is for future adaptive quality.
-    void gate;
   }
 
   private handleFaceLost(): void {

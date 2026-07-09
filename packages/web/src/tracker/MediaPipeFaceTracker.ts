@@ -145,7 +145,10 @@ export class MediaPipeFaceTracker implements IFaceTracker {
       throw createSDKError("TRACKER_DETECT_FAILED", t("error.tracker_detect_failed"), err);
     }
 
-    if (!result.faceLandmarks?.length) return null;
+    if (!result.faceLandmarks?.length) {
+      this.eyeHistory.length = 0;
+      return null;
+    }
 
     const landmarks = result.faceLandmarks[0];
     const matrix = result.facialTransformationMatrixes?.[0]?.data;
@@ -227,6 +230,7 @@ export class MediaPipeFaceTracker implements IFaceTracker {
 
   destroy(): void {
     this.disposed = true;
+    this.eyeHistory.length = 0;
     try {
       this.landmarker?.close();
       this.imageLandmarker?.close();

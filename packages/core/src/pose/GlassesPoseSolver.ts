@@ -289,12 +289,13 @@ export class GlassesPoseSolver {
   private clampScale(
     scale: number,
     asset: GlassesAssetManifest,
-    cfg: GlassesFittingConfig,
+    _cfg: GlassesFittingConfig,
   ): number {
     const min = asset.fitting.minScale ?? 0.1;
     const max = asset.fitting.maxScale ?? 5;
-    const mult = cfg.scaleMultiplier ?? 1;
-    return clamp(scale / (mult || 1) * mult, min, max);
+    // The scaleMultiplier was already applied in computeScale.
+    // Here we only clamp the final computed scale to the manifest's bounds.
+    return clamp(scale, min, max);
   }
 
   // -----------------------------------------------------------------------

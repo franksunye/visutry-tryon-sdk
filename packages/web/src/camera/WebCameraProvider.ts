@@ -86,9 +86,16 @@ export class WebCameraProvider implements ICameraProvider {
   }
 
   async switchCamera(): Promise<void> {
-    this.config.facingMode = this.config.facingMode === "user" ? "environment" : "user";
+    const previousFacingMode = this.config.facingMode;
+    this.config.facingMode = previousFacingMode === "user" ? "environment" : "user";
     this.stop();
-    await this.start();
+    try {
+      await this.start();
+    } catch (err) {
+      // Rollback facingMode on failure so config stays consistent.
+      this.config.facingMode = previousFacingMode;
+      throw err;
+    }
   }
 
   destroy(): void {

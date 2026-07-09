@@ -28,6 +28,9 @@ export { FaceMetricsCalculator } from "./face/FaceMetricsCalculator.js";
 // Face shape scoring
 export { FaceShapeScorer, FACE_SHAPE_SCORER_VERSION } from "./face/FaceShapeScorer.js";
 
+// Shared face quality thresholds
+export { MAX_TILT_DEG, MAX_SYMMETRY_OFFSET, MIN_FACE_SPAN } from "./face/constants.js";
+
 // Glasses pose solver
 export {
   GlassesPoseSolver,

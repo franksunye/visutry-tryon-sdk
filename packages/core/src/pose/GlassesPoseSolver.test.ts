@@ -874,14 +874,15 @@ describe("GlassesPoseSolver", () => {
     expect(result).toBe(5);
   });
 
-  it("clampScale handles scaleMultiplier of 0 (avoids division by zero)", () => {
+  it("clampScale ignores scaleMultiplier (already applied in computeScale)", () => {
     const asset = buildManifest();
     const cfg = { ...DEFAULT_FITTING_CONFIG, scaleMultiplier: 0 };
     const result = (solver as unknown as {
       clampScale: (s: number, a: typeof asset, c: typeof cfg) => number;
     }).clampScale(5, asset, cfg);
-    // scale / (0 || 1) * 0 = 0 → clamp(0, 0.2, 3) = 0.2
-    expect(result).toBe(0.2);
+    // scaleMultiplier is no longer applied in clampScale; it's applied in
+    // computeScale. clampScale just clamps to [minScale, maxScale] = [0.2, 3].
+    expect(result).toBe(3);
   });
 
   // ---------------------------------------------------------------------------

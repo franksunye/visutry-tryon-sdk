@@ -89,6 +89,8 @@ export class ThreeJsRenderer implements IRenderer {
       throw createSDKError("RENDERER_INIT_FAILED", t("error.renderer_init_failed"));
     }
     this.currentAsset = asset;
+    // Reset retry counter for this new load attempt.
+    this.loadRetries = 0;
 
     // Retry glTF loading with a fixed 500ms delay between attempts.
     let gltf;
@@ -295,8 +297,22 @@ export class ThreeJsRenderer implements IRenderer {
       const mesh = child as THREE.Mesh;
       if (mesh.geometry) mesh.geometry.dispose();
       const material = mesh.material as THREE.Material | THREE.Material[];
-      if (Array.isArray(material)) material.forEach((m) => m.dispose());
-      else if (material) material.dispose();
+      if (Array.isArray(material)) {
+        material.forEach((m) => this.disposeMaterial(m));
+      } else if (material) {
+        this.disposeMaterial(material);
+      }
     });
+  }
+
+  private disposeMaterial(material: THREE.Material): void {
+    // Dispose all texture maps attached to the material to prevent GPU memory leaks.
+    const mat = material as THREE.Material & Record<string, THREE.Texture | null | undefined>;
+    const textureProps = ["map", "normalMap", "roughnessMap", "metalnessMap", "aoMap", "emissiveMap", "bumpMap", "displacementMap", "alphaMap", "envMap"];
+    for (const prop of textureProps) {
+      const tex = mat[prop];
+      if (tex) tex.dispose();
+    }
+    material.dispose();
   }
 }

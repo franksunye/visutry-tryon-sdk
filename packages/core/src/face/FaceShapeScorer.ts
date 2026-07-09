@@ -7,6 +7,7 @@ import type {
   NormalizedFaceResult,
 } from "../types/index.js";
 import { FaceMetricsCalculator } from "./FaceMetricsCalculator.js";
+import { MAX_TILT_DEG, MAX_SYMMETRY_OFFSET, MIN_FACE_SPAN } from "./constants.js";
 
 export const FACE_SHAPE_SCORER_VERSION = "0.2.0";
 
@@ -61,6 +62,35 @@ function buildGeometrySignals(
 }
 
 /**
+ * Compute raw integer scores for all 7 face shapes from visutry ratios.
+ * Shared by classifyFaceGeometry and getAllScores to prevent divergence.
+ */
+function computeAllScores(ratios: NonNullable<FaceMetrics["visutry"]>): Record<string, number> {
+  const scores: Record<string, number> = {
+    round: 0, square: 0, oval: 0, heart: 0, diamond: 0, oblong: 0, triangle: 0,
+  };
+
+  const { faceAspectRatio, jawToCheekWidth, foreheadToCheekWidth } = ratios;
+
+  if (faceAspectRatio >= 1.42) scores.oblong += 4;
+  if (faceAspectRatio >= 1.27 && faceAspectRatio < 1.42) scores.oval += 3;
+  if (faceAspectRatio < 1.2) scores.round += 2;
+  if (faceAspectRatio < 1.18 && jawToCheekWidth >= 0.86) scores.square += 3;
+  if (jawToCheekWidth >= 0.92 && foreheadToCheekWidth >= 0.9) scores.square += 3;
+  if (jawToCheekWidth < 0.76 && foreheadToCheekWidth >= 0.84) scores.heart += 4;
+  if (jawToCheekWidth < 0.78 && foreheadToCheekWidth < 0.84) scores.diamond += 4;
+  if (jawToCheekWidth > 0.98 && foreheadToCheekWidth < 0.88) scores.triangle += 4;
+  if (jawToCheekWidth >= 0.78 && jawToCheekWidth <= 0.9 && faceAspectRatio >= 1.2) {
+    scores.oval += 2;
+  }
+  if (jawToCheekWidth >= 0.82 && jawToCheekWidth <= 0.94 && faceAspectRatio < 1.22) {
+    scores.round += 2;
+  }
+
+  return scores;
+}
+
+/**
  * classifyFaceGeometry — exact port of visutry's classifyFaceGeometry().
  *
  * Uses integer if/else scoring on three key ratios:
@@ -76,33 +106,7 @@ function classifyFaceGeometry(ratios: NonNullable<FaceMetrics["visutry"]>): {
   confidence: number;
   signals: string[];
 } {
-  const scores: Record<string, number> = {
-    round: 0,
-    square: 0,
-    oval: 0,
-    heart: 0,
-    diamond: 0,
-    oblong: 0,
-    triangle: 0,
-  };
-
-  const { faceAspectRatio, jawToCheekWidth, foreheadToCheekWidth } = ratios;
-
-  // --- Exact replication of visutry's scoring rules ---
-  if (faceAspectRatio >= 1.42) scores.oblong += 4;
-  if (faceAspectRatio >= 1.27 && faceAspectRatio < 1.42) scores.oval += 3;
-  if (faceAspectRatio < 1.2) scores.round += 2;
-  if (faceAspectRatio < 1.18 && jawToCheekWidth >= 0.86) scores.square += 3;
-  if (jawToCheekWidth >= 0.92 && foreheadToCheekWidth >= 0.9) scores.square += 3;
-  if (jawToCheekWidth < 0.76 && foreheadToCheekWidth >= 0.84) scores.heart += 4;
-  if (jawToCheekWidth < 0.78 && foreheadToCheekWidth < 0.84) scores.diamond += 4;
-  if (jawToCheekWidth > 0.98 && foreheadToCheekWidth < 0.88) scores.triangle += 4;
-  if (jawToCheekWidth >= 0.78 && jawToCheekWidth <= 0.9 && faceAspectRatio >= 1.2) {
-    scores.oval += 2;
-  }
-  if (jawToCheekWidth >= 0.82 && jawToCheekWidth <= 0.94 && faceAspectRatio < 1.22) {
-    scores.round += 2;
-  }
+  const scores = computeAllScores(ratios);
 
   // --- Rank candidates ---
   const ranked = CANONICAL_SHAPES.map((shape) => ({ shape, score: scores[shape] })).sort(
@@ -166,9 +170,9 @@ export class FaceShapeScorer {
     const v = metrics.visutry;
 
     // --- Quality gates (exact match to visutry's analyzeFaceLandmarks) ---
-    const MAX_TILT = 15;
-    const MAX_SYMMETRY = 0.14;
-    const MIN_SPAN = 0.16;
+    const MAX_TILT = MAX_TILT_DEG;
+    const MAX_SYMMETRY = MAX_SYMMETRY_OFFSET;
+    const MIN_SPAN = MIN_FACE_SPAN;
 
     const allWarnings = [...warnings];
 
@@ -254,28 +258,7 @@ export class FaceShapeScorer {
    * Get raw integer scores for all 7 shapes — same as visutry's scoring.
    */
   private getAllScores(v: NonNullable<FaceMetrics["visutry"]>): Record<string, number> {
-    const scores: Record<string, number> = {
-      round: 0, square: 0, oval: 0, heart: 0, diamond: 0, oblong: 0, triangle: 0,
-    };
-
-    const { faceAspectRatio, jawToCheekWidth, foreheadToCheekWidth } = v;
-
-    if (faceAspectRatio >= 1.42) scores.oblong += 4;
-    if (faceAspectRatio >= 1.27 && faceAspectRatio < 1.42) scores.oval += 3;
-    if (faceAspectRatio < 1.2) scores.round += 2;
-    if (faceAspectRatio < 1.18 && jawToCheekWidth >= 0.86) scores.square += 3;
-    if (jawToCheekWidth >= 0.92 && foreheadToCheekWidth >= 0.9) scores.square += 3;
-    if (jawToCheekWidth < 0.76 && foreheadToCheekWidth >= 0.84) scores.heart += 4;
-    if (jawToCheekWidth < 0.78 && foreheadToCheekWidth < 0.84) scores.diamond += 4;
-    if (jawToCheekWidth > 0.98 && foreheadToCheekWidth < 0.88) scores.triangle += 4;
-    if (jawToCheekWidth >= 0.78 && jawToCheekWidth <= 0.9 && faceAspectRatio >= 1.2) {
-      scores.oval += 2;
-    }
-    if (jawToCheekWidth >= 0.82 && jawToCheekWidth <= 0.94 && faceAspectRatio < 1.22) {
-      scores.round += 2;
-    }
-
-    return scores;
+    return computeAllScores(v);
   }
 
   private unknownResult(

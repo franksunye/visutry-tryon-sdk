@@ -8,6 +8,7 @@ import type {
 } from "../types/index.js";
 import { FaceSemanticMapper } from "../face/FaceSemanticMapper.js";
 import { clamp01 } from "../utils/math.js";
+import { MAX_TILT_DEG, MAX_SYMMETRY_OFFSET, MIN_FACE_SPAN } from "../face/constants.js";
 
 interface ModeThresholds {
   minConfidence: number;
@@ -132,9 +133,6 @@ export class QualityGate {
    */
   private checkPhotoQuality(sem: FaceSemanticPoints): FaceQualityWarning[] {
     const warnings: FaceQualityWarning[] = [];
-    const MAX_TILT_DEG = 15;
-    const MAX_SYMMETRY_OFFSET = 0.14;
-    const MIN_FACE_SPAN = 0.16;
 
     // Eye line tilt
     if (sem.leftEyeOuter && sem.rightEyeOuter) {
