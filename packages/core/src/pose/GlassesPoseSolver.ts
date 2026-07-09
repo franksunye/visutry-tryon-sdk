@@ -213,7 +213,7 @@ export class GlassesPoseSolver {
             ? {
                 x: (sem.leftBrowCenter.x + sem.rightBrowCenter.x) / 2,
                 y: (sem.leftBrowCenter.y + sem.rightBrowCenter.y) / 2,
-                z: (sem.leftBrowCenter.z + sem.rightBrowCenter.z) / 2,
+                z: ((sem.leftBrowCenter.z ?? 0) + (sem.rightBrowCenter.z ?? 0)) / 2,
               }
             : sem.eyesCenter;
         break;

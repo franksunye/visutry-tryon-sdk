@@ -64,6 +64,8 @@ export class MediaPipeFaceTracker implements IFaceTracker {
   private lastTimestamp = -1;
   private readonly eyeHistory: Point3D[] = [];
   private static readonly HISTORY_SIZE = 6;
+  /** Reusable buffer for landmark conversion to avoid per-frame GC pressure. */
+  private landmarkBuffer: Point3D[] = [];
   private disposed = false;
   private initRetries = 0;
   private readonly maxInitRetries = 3;
@@ -286,7 +288,22 @@ export class MediaPipeFaceTracker implements IFaceTracker {
     source: FaceResultSource,
     _source: unknown,
   ): NormalizedFaceResult {
-    const points: Point3D[] = landmarks.map((p) => ({ x: p.x, y: p.y, z: p.z ?? 0 }));
+    // Reuse the landmark buffer to avoid allocating ~478 objects per frame.
+    const points = this.landmarkBuffer;
+    if (points.length !== landmarks.length) {
+      points.length = landmarks.length;
+    }
+    for (let i = 0; i < landmarks.length; i++) {
+      const p = landmarks[i];
+      const existing = points[i];
+      if (existing) {
+        existing.x = p.x;
+        existing.y = p.y;
+        existing.z = p.z ?? 0;
+      } else {
+        points[i] = { x: p.x, y: p.y, z: p.z ?? 0 };
+      }
+    }
     const semantic = this.mapper.map(points);
     const bbox = this.computeBBox(points);
     const pose = this.computePose(points, semantic, matrix);

@@ -257,9 +257,16 @@ export class Recommender {
       reasons.push(...cm.reasons);
 
       // --- Price (max 10) — survivors are within budget (or unconstrained) ---
-      raw += SCORE_WEIGHTS.price;
-      if (maxPrice != null) {
-        reasons.push(`Priced within your budget (<= ${maxPrice}).`);
+      // Items with a price get full points (they passed the budget filter).
+      // Items without price metadata get partial credit — they're accessible
+      // but can't be verified against a budget.
+      if (item.price != null) {
+        raw += SCORE_WEIGHTS.price;
+        if (maxPrice != null) {
+          reasons.push(`Priced within your budget (<= ${maxPrice}).`);
+        }
+      } else {
+        raw += SCORE_WEIGHTS.price * 0.5;
       }
 
       const score = clamp01(raw / MAX_RAW_SCORE);

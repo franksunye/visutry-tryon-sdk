@@ -17,7 +17,8 @@ export interface Point2D {
 export interface Point3D {
   x: number;
   y: number;
-  z: number;
+  /** Z is optional — some landmark sources (e.g. 2D projections) omit depth. */
+  z?: number;
 }
 
 export interface Vector3 {
@@ -166,8 +167,21 @@ export interface CameraConfig {
   mirror?: boolean;
 }
 
-/** Adapter-defined WeChat frame payload — left opaque to the core. */
+/**
+ * Adapter-defined WeChat frame payload. Carries the canvas and image data
+ * needed by the WeChat tracker adapter. Left opaque in core so the WeChat
+ * package owns the concrete implementation.
+ */
 export interface WechatFrameInput {
+  /** Canvas element or canvas ID for drawing the video frame. */
+  canvas?: unknown;
+  /** Image data (RGBA array or base64 string) from the WeChat camera frame. */
+  imageData?: unknown;
+  /** Frame width in pixels. */
+  width?: number;
+  /** Frame height in pixels. */
+  height?: number;
+  /** Additional adapter-specific properties. */
   [key: string]: unknown;
 }
 

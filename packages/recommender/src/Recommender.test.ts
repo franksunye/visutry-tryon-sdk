@@ -275,7 +275,7 @@ describe("Recommender — price", () => {
 
   it("keeps items without a price even when maxPrice is set", () => {
     const results = recommendOval(
-      [buildGlassesItem("no-price", { shapeCategory: "rectangle" })],
+      [buildGlassesItem("no-price", { shapeCategory: "rectangle", price: undefined })],
       { maxPrice: 200 },
     );
     expect(results).toHaveLength(1);

@@ -65,7 +65,7 @@ export class ThreeJsRenderer implements IRenderer {
       canvas,
       alpha: opts.background === "transparent",
       antialias: opts.antialias,
-      preserveDrawingBuffer: true, // required for snapshot via toDataURL
+      preserveDrawingBuffer: false, // optimized: snapshot re-renders on demand
     });
     this.renderer.setPixelRatio(opts.pixelRatio);
     this.renderer.setSize(opts.width, opts.height, false);
@@ -180,6 +180,9 @@ export class ThreeJsRenderer implements IRenderer {
     // Render at requested resolution.
     const needResize = w !== this.width || h !== this.height;
     if (needResize) this.renderer.setSize(w, h, false);
+    // Render immediately before toDataURL — with preserveDrawingBuffer: false,
+    // the browser may clear the buffer between frames, so we must render
+    // synchronously right before reading back pixels.
     this.renderer.render(this.scene, this.camera);
     const dataUrl = this.renderer.domElement.toDataURL(format, quality);
     if (needResize) this.renderer.setSize(this.width, this.height, false);

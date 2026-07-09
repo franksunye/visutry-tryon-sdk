@@ -60,7 +60,7 @@ export function distance3D(a: Point3D, b: Point3D): number {
 
 /** Midpoint of two 3D points. */
 export function midpoint(a: Point3D, b: Point3D): Point3D {
-  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: (a.z + b.z) / 2 };
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: ((a.z ?? 0) + (b.z ?? 0)) / 2 };
 }
 
 // ---------------------------------------------------------------------------

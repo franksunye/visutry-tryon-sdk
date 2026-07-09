@@ -130,8 +130,8 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
   private visibilityHandler: (() => void) | null = null;
 
   // --- Analysis -----------------------------------------------------------
-  private analysisTargetFrames = 8;
-  private analysisIntervalMs = 120;
+  private analysisTargetFrames = 5;
+  private analysisIntervalMs = 250;
 
   private static readonly MAX_PERF_SAMPLES = 60;
   private static readonly PERF_EMIT_INTERVAL_MS = 1000;

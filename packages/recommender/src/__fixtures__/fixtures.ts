@@ -65,6 +65,7 @@ export function buildGlassesItem(
     thumbnailUrl: "https://example.com/thumb.png",
     shapeCategory: "rectangle",
     dimensions: { frameWidthMm: 140, lensWidthMm: 50 },
+    price: 0, // default price so scoring tests get full price points
     ...overrides,
   };
 }

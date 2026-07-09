@@ -157,8 +157,37 @@ export class FaceMetricsCalculator {
 
     const perFrame = frames.map((f) => this.compute(f));
 
-    const pick = (key: keyof FaceMetrics) =>
-      perFrame.map((m) => m[key] as number).filter((v) => typeof v === "number" && !Number.isNaN(v));
+    // Single-pass extraction of all numeric metrics to avoid O(keys × N) iterations.
+    const numericKeys: (keyof FaceMetrics)[] = [
+      "faceWidth", "faceHeight", "cheekboneWidth", "jawWidth",
+      "eyeOuterDistance", "eyeInnerDistance", "eyeCenterDistance",
+      "noseBridgeToEyeLine", "widthHeightRatio", "jawCheekRatio",
+      "measurementQuality",
+    ];
+    const collected: Record<string, number[]> = {};
+    for (const key of numericKeys) collected[key] = [];
+
+    const foreheadWidthArr: number[] = [];
+    const faceOutlineWidthArr: number[] = [];
+    const noseBridgeWidthArr: number[] = [];
+    const eyeLineTiltArr: number[] = [];
+    const symmetryOffsetArr: number[] = [];
+    const faceSpanArr: number[] = [];
+
+    for (const m of perFrame) {
+      for (const key of numericKeys) {
+        const v = m[key] as number;
+        if (typeof v === "number" && !Number.isNaN(v)) collected[key].push(v);
+      }
+      if (typeof m.foreheadWidth === "number" && !Number.isNaN(m.foreheadWidth)) foreheadWidthArr.push(m.foreheadWidth);
+      if (typeof m.faceOutlineWidth === "number" && !Number.isNaN(m.faceOutlineWidth)) faceOutlineWidthArr.push(m.faceOutlineWidth);
+      if (typeof m.noseBridgeWidth === "number" && !Number.isNaN(m.noseBridgeWidth)) noseBridgeWidthArr.push(m.noseBridgeWidth);
+      if (typeof m.eyeLineTiltDeg === "number" && !Number.isNaN(m.eyeLineTiltDeg)) eyeLineTiltArr.push(m.eyeLineTiltDeg);
+      if (typeof m.symmetryOffset === "number" && !Number.isNaN(m.symmetryOffset)) symmetryOffsetArr.push(m.symmetryOffset);
+      if (typeof m.faceSpan === "number" && !Number.isNaN(m.faceSpan)) faceSpanArr.push(m.faceSpan);
+    }
+
+    const pick = (key: string) => collected[key] ?? [];
 
     const faceWidth = median(pick("faceWidth"));
     const faceHeight = median(pick("faceHeight"));
@@ -170,13 +199,6 @@ export class FaceMetricsCalculator {
     const noseBridgeToEyeLine = median(pick("noseBridgeToEyeLine"));
 
     // visutry additions — aggregate optional metrics when available
-    const foreheadWidthArr = perFrame.map((m) => m.foreheadWidth).filter((v): v is number => typeof v === "number" && !Number.isNaN(v));
-    const faceOutlineWidthArr = perFrame.map((m) => m.faceOutlineWidth).filter((v): v is number => typeof v === "number" && !Number.isNaN(v));
-    const noseBridgeWidthArr = perFrame.map((m) => m.noseBridgeWidth).filter((v): v is number => typeof v === "number" && !Number.isNaN(v));
-    const eyeLineTiltArr = perFrame.map((m) => m.eyeLineTiltDeg).filter((v): v is number => typeof v === "number" && !Number.isNaN(v));
-    const symmetryOffsetArr = perFrame.map((m) => m.symmetryOffset).filter((v): v is number => typeof v === "number" && !Number.isNaN(v));
-    const faceSpanArr = perFrame.map((m) => m.faceSpan).filter((v): v is number => typeof v === "number" && !Number.isNaN(v));
-
     const foreheadWidth = foreheadWidthArr.length > 0 ? median(foreheadWidthArr) : undefined;
     const faceOutlineWidth = faceOutlineWidthArr.length > 0 ? median(faceOutlineWidthArr) : undefined;
     const noseBridgeWidth = noseBridgeWidthArr.length > 0 ? median(noseBridgeWidthArr) : undefined;

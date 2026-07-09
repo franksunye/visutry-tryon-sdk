@@ -44,7 +44,7 @@ export class CoordinateSystem {
     return {
       x: point.x * width,
       y: point.y * height,
-      z: point.z * Math.max(width, height),
+      z: (point.z ?? 0) * Math.max(width, height),
     };
   }
 

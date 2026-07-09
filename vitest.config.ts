@@ -24,6 +24,9 @@ export default defineConfig({
       reporter: ["text", "json", "html"],
       include: ["packages/*/src/**/*.ts"],
       exclude: ["**/*.test.ts", "**/*.spec.ts", "**/index.ts", "**/types/**"],
+      // Per-package coverage: each package must meet its own threshold.
+      // Global thresholds are kept as a safety net.
+      perFile: true,
       thresholds: {
         statements: 80,
         branches: 75,
