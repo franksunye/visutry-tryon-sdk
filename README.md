@@ -155,7 +155,7 @@ overlay.renderFromFace(face, img.naturalWidth, img.naturalHeight);
 
 ## Tech Stack
 
-- **TypeScript** 5.7 (ES2020, strict mode)
+- **TypeScript** 5.9 (ES2020, strict mode)
 - **pnpm** 10 workspace monorepo
 - **vitest** 2.1 (jsdom, 80% coverage threshold)
 - **@mediapipe/tasks-vision** 0.10.18 (478-point FaceLandmarker)

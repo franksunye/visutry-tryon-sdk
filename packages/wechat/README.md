@@ -24,7 +24,7 @@ pnpm add @visutry/tryon-wechat @visutry/tryon-core
 npm install @visutry/tryon-wechat @visutry/tryon-core
 ```
 
-> Requires Node.js >= 18 and the WeChat Mini Program base library that supports
+> Requires Node.js >= 20 and the WeChat Mini Program base library that supports
 > VisionKit face geometry + offscreen canvas.
 
 ## Basic usage

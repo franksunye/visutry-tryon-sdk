@@ -11,7 +11,7 @@
   "excludePrivate": true,
   "excludeProtected": true,
   "excludeExternals": true,
-  "includeVersion": true,
+  "includeVersion": false,
   "githubPages": true,
   "exclude": ["node_modules/**", "**/node_modules/**", "vitest.config.ts", "*.config.ts"],
   "sourceLinkExternal": false,

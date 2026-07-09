@@ -20,7 +20,7 @@ pnpm add @visutry/recommender @visutry/tryon-core
 npm install @visutry/recommender @visutry/tryon-core
 ```
 
-> Requires Node.js >= 18.
+> Requires Node.js >= 20.
 
 ## Basic usage
 

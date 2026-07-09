@@ -19,7 +19,7 @@ pnpm add @visutry/tryon-core
 npm install @visutry/tryon-core
 ```
 
-> Requires Node.js >= 18.
+> Requires Node.js >= 20.
 
 ## Basic usage
 

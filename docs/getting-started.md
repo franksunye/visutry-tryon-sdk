@@ -27,7 +27,7 @@ VisuTry is a privacy-first, on-device face geometry and AR glasses try-on SDK. I
 Key capabilities:
 
 - Real-time AR glasses try-on with sub-frame pose smoothing
-- Geometric face shape analysis (6 shapes) with confidence scoring
+- Geometric face shape analysis (7 shapes) with confidence scoring
 - Glasses recommendation engine (shape + size + brand/color/material)
 - Quality gating for analysis, try-on, and snapshot use cases
 - Snapshot export for sharing
@@ -36,7 +36,7 @@ Key capabilities:
 
 ## Prerequisites
 
-- **Node.js** >= 18.0.0
+- **Node.js** >= 20.0.0
 - **pnpm** >= 9.0.0 (the SDK is a pnpm monorepo)
 - A modern browser with WebAssembly and WebGL support
 - Camera access (HTTPS or `localhost` for `getUserMedia`)
@@ -49,13 +49,13 @@ Key capabilities:
 
 ### Install the web adapter
 
-The `@visutry/tryon-web` package is the primary entry point for H5 applications. It bundles the core library, the MediaPipe tracker, and the Three.js renderer.
+The `@visutry/tryon-web` package is the primary entry point for H5 applications. It depends on the core library, the MediaPipe tracker, and the Three.js renderer.
 
 ```bash
-pnpm add @visutry/tryon-web
+pnpm add @visutry/tryon-web three @mediapipe/tasks-vision
 ```
 
-This transitively installs `@visutry/tryon-core`, `@mediapipe/tasks-vision`, and `three`.
+This transitively installs `@visutry/tryon-core`. Note that `three` and `@mediapipe/tasks-vision` are peer dependencies — you need to install them alongside:
 
 ### Install individual packages
 
@@ -282,6 +282,6 @@ await sdk.loadGlasses(manifest);
 - [Web Integration Guide](./web-integration.md) — Full H5 integration with camera setup, tracker modes, events, snapshots, and face shape analysis.
 - [WeChat Mini Program Integration](./wechat-integration.md) — Experimental adapter for WeChat.
 - [Glasses Asset Standard](./glasses-asset-standard.md) — How to author and validate glasses manifests and GLB models.
-- [Face Shape Algorithm](./face-shape-algorithm.md) — Deep dive into the 6-shape scoring algorithm.
+- [Face Shape Algorithm](./face-shape-algorithm.md) — Deep dive into the 7-shape scoring algorithm.
 - [Privacy Model](./privacy.md) — The on-device-only contract and `PrivacyGuard` API.
 - [Performance Guide](./performance.md) — Tracker modes, expected FPS, and low-end device strategies.

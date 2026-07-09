@@ -25,7 +25,7 @@ pnpm add @visutry/tryon-web three @mediapipe/tasks-vision
 npm install @visutry/tryon-web three @mediapipe/tasks-vision
 ```
 
-> Requires Node.js >= 18. The browser must support WebGL2 and `getUserMedia`.
+> Requires Node.js >= 20. The browser must support WebGL2 and `getUserMedia`.
 
 ## Basic usage
 
