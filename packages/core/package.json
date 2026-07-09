@@ -1,6 +1,6 @@
 {
   "name": "@visutry/tryon-core",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Platform-agnostic core for VisuTry SDK: types, coordinate transforms, face semantic mapping, face metrics, face shape scoring, glasses pose solver, pose smoothing, quality gate.",
   "license": "MIT",
   "keywords": [
