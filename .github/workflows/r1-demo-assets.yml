@@ -28,3 +28,8 @@ jobs:
         run: |
           echo "TLS certificate presented by cdn.visutry.com:"
           echo | openssl s_client -connect cdn.visutry.com:443 -servername cdn.visutry.com 2>/dev/null | openssl x509 -noout -subject -issuer -dates || true
+          echo "DIAGNOSTIC ONLY (untrusted): HTTPS status with TLS verification bypassed; NEVER an acceptance PASS"
+          for model in aviator-classic cateye-fashion round-retro sport-wrap square-modern; do
+            printf "%s: " "$model"
+            curl -k -L -sS -I --max-time 12 -o /dev/null -w 'status=%{http_code} content_type=%{content_type}\\n' "https://cdn.visutry.com/demo/glasses/$model.glb" || true
+          done
