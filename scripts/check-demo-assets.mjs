@@ -77,7 +77,9 @@ for (const file of files) {
     console.log(`PASS ${file}: GLB v2, HTTP ${result.http}, CORS ${result.cors}`);
   } catch (error) {
     failures++;
-    console.error(`FAIL ${file}: ${manifest.modelUrl ?? "no URL"} — ${error instanceof Error ? error.message : String(error)}`);
+    const causeCode = error instanceof Error && error.cause && typeof error.cause === "object" &&
+      "code" in error.cause && typeof error.cause.code === "string" ? ` [${error.cause.code}]` : "";
+    console.error(`FAIL ${file}: ${manifest.modelUrl ?? "no URL"} — ${error instanceof Error ? error.message : String(error)}${causeCode}`);
   }
 }
 
