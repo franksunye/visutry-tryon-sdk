@@ -51,6 +51,7 @@
     "clean": "pnpm -r exec rimraf dist coverage .tsbuildinfo",
     "demo:web": "pnpm --filter ./examples/web-demo run dev",
     "docs:api": "typedoc",
+    "demo:assets:verify": "node scripts/check-demo-assets.mjs",
     "changeset": "changeset",
     "version": "changeset version",
     "release": "pnpm build && changeset publish"
