@@ -58,14 +58,13 @@ const TRACKING_MODE_SETTINGS: Record<
 export class MediaPipeFaceTracker implements IFaceTracker {
   private landmarker: FaceLandmarker | null = null;
   private imageLandmarker: FaceLandmarker | null = null;
+  private imageInitialization: Promise<void> | null = null;
   private mapper: FaceSemanticMapper;
   private config: TrackerConfig;
   private options: MediaPipeTrackerOptions;
   private lastTimestamp = -1;
   private readonly eyeHistory: Point3D[] = [];
   private static readonly HISTORY_SIZE = 6;
-  /** Reusable buffer for landmark conversion to avoid per-frame GC pressure. */
-  private landmarkBuffer: Point3D[] = [];
   private disposed = false;
   private initRetries = 0;
   private readonly maxInitRetries = 3;
@@ -78,6 +77,7 @@ export class MediaPipeFaceTracker implements IFaceTracker {
   }
 
   async initialize(config?: TrackerConfig): Promise<void> {
+    if (this.disposed) throw createSDKError("TRACKER_INIT_FAILED", t("error.tracker_not_initialized"));
     if (config) this.config = { ...this.config, ...config };
     const settings = TRACKING_MODE_SETTINGS[this.config.mode];
 
@@ -89,6 +89,7 @@ export class MediaPipeFaceTracker implements IFaceTracker {
     } catch (err) {
       throw createSDKError("TRACKER_INIT_FAILED", t("error.tracker_init_failed"), err);
     }
+    if (this.disposed) throw createSDKError("TRACKER_INIT_FAILED", t("error.tracker_not_initialized"));
 
     const createOptions = {
       baseOptions: {
@@ -108,11 +109,17 @@ export class MediaPipeFaceTracker implements IFaceTracker {
     let lastErr: unknown;
     while (true) {
       try {
-        this.landmarker = await FaceLandmarker.createFromOptions(vision, createOptions);
+        const landmarker = await FaceLandmarker.createFromOptions(vision, createOptions);
+        if (this.disposed) {
+          landmarker.close();
+          throw createSDKError("TRACKER_INIT_FAILED", t("error.tracker_not_initialized"));
+        }
+        this.landmarker = landmarker;
         this.initRetries = 0;
         return;
       } catch (err) {
         lastErr = err;
+        if (this.disposed) break;
         if (this.initRetries < this.maxInitRetries) {
           await new Promise((resolve) => setTimeout(resolve, this.retryDelayMs * (this.initRetries + 1)));
           this.initRetries++;
@@ -154,19 +161,13 @@ export class MediaPipeFaceTracker implements IFaceTracker {
 
     const landmarks = result.faceLandmarks[0];
     const matrix = result.facialTransformationMatrixes?.[0]?.data;
-    return this.buildResult(landmarks, matrix, ts, "mediapipe", video);
+    return this.buildResult(landmarks, matrix, ts, "mediapipe", video, result.faceLandmarks.length);
   }
 
   async detectImage(input: unknown): Promise<NormalizedFaceResult | null> {
     if (this.disposed) {
       throw createSDKError("TRACKER_DETECT_FAILED", t("error.tracker_not_initialized"));
     }
-
-    // Lazily create a separate IMAGE-mode landmarker for still photos.
-    if (!this.imageLandmarker) {
-      await this.initImageLandmarker();
-    }
-    if (!this.imageLandmarker) return null;
 
     // Accept HTMLImageElement, HTMLCanvasElement, ImageBitmap, or HTMLVideoElement.
     let imageSource: HTMLImageElement | HTMLCanvasElement | ImageBitmap | HTMLVideoElement;
@@ -182,6 +183,27 @@ export class MediaPipeFaceTracker implements IFaceTracker {
       throw createSDKError("TRACKER_DETECT_FAILED", "Unsupported image input type for detectImage");
     }
 
+    // Use decoded, intrinsic dimensions, not an element's CSS/display size.
+    // Validate before downloading models so unsupported input has no side effects.
+    if (!this.getImageSize(imageSource)) {
+      throw createSDKError("TRACKER_DETECT_FAILED", "Image input has no valid decoded dimensions");
+    }
+
+    // Share initialization across concurrent callers and close a model that
+    // finishes loading after destroy(). Detection itself is synchronous.
+    if (!this.imageLandmarker) {
+      if (!this.imageInitialization) this.imageInitialization = this.initImageLandmarker();
+      const pending = this.imageInitialization;
+      try {
+        await pending;
+      } finally {
+        if (this.imageInitialization === pending) this.imageInitialization = null;
+      }
+    }
+    if (this.disposed || !this.imageLandmarker) {
+      throw createSDKError("TRACKER_DETECT_FAILED", t("error.tracker_not_initialized"));
+    }
+
     let result: FaceLandmarkerResult;
     try {
       result = this.imageLandmarker.detect(imageSource);
@@ -194,7 +216,7 @@ export class MediaPipeFaceTracker implements IFaceTracker {
     const landmarks = result.faceLandmarks[0];
     const matrix = result.facialTransformationMatrixes?.[0]?.data;
     // Use 0 as timestamp for single-image detection (no temporal context needed).
-    return this.buildResult(landmarks, matrix, 0, "mediapipe", imageSource);
+    return this.buildResult(landmarks, matrix, 0, "mediapipe", imageSource, result.faceLandmarks.length, false);
   }
 
   /**
@@ -211,20 +233,31 @@ export class MediaPipeFaceTracker implements IFaceTracker {
       throw createSDKError("TRACKER_INIT_FAILED", t("error.tracker_init_failed"), err);
     }
 
+    if (this.disposed) {
+      throw createSDKError("TRACKER_DETECT_FAILED", t("error.tracker_not_initialized"));
+    }
+
     const settings = TRACKING_MODE_SETTINGS[this.config.mode];
     try {
-      this.imageLandmarker = await FaceLandmarker.createFromOptions(vision, {
+      const landmarker = await FaceLandmarker.createFromOptions(vision, {
         baseOptions: {
           modelAssetPath: this.options.modelAssetPath ?? DEFAULT_FACE_LANDMARKER_MODEL,
           delegate: settings.delegate,
         },
         runningMode: "IMAGE",
-        numFaces: 1,
+        // Detect a second face so the shared analysis gate can reject ambiguous
+        // photos instead of silently treating the first person as the subject.
+        numFaces: Math.max(2, this.config.maxFaces ?? 1),
         minFaceDetectionConfidence: settings.minDetection,
         minFacePresenceConfidence: settings.minPresence,
         outputFaceBlendshapes: false,
         outputFacialTransformationMatrixes: true,
       });
+      if (this.disposed) {
+        landmarker.close();
+        throw createSDKError("TRACKER_DETECT_FAILED", t("error.tracker_not_initialized"));
+      }
+      this.imageLandmarker = landmarker;
     } catch (err) {
       throw createSDKError("TRACKER_INIT_FAILED", "Failed to init IMAGE-mode landmarker", err);
     }
@@ -233,14 +266,16 @@ export class MediaPipeFaceTracker implements IFaceTracker {
   destroy(): void {
     this.disposed = true;
     this.eyeHistory.length = 0;
-    try {
-      this.landmarker?.close();
-      this.imageLandmarker?.close();
-    } catch (err) {
-      console.warn("[VisuTrySDK]", "MediaPipeFaceTracker: error closing landmarker:", err);
-    }
+    const models = [this.landmarker, this.imageLandmarker];
     this.landmarker = null;
     this.imageLandmarker = null;
+    for (const model of models) {
+      try {
+        model?.close();
+      } catch (err) {
+        console.warn("[VisuTrySDK]", "MediaPipeFaceTracker: error closing landmarker:", err);
+      }
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -286,32 +321,25 @@ export class MediaPipeFaceTracker implements IFaceTracker {
     matrix: number[] | undefined,
     timestamp: number,
     source: FaceResultSource,
-    _source: unknown,
+    imageSource: unknown,
+    faceCount = 1,
+    temporal = true,
   ): NormalizedFaceResult {
-    // Reuse the landmark buffer to avoid allocating ~478 objects per frame.
-    const points = this.landmarkBuffer;
-    if (points.length !== landmarks.length) {
-      points.length = landmarks.length;
-    }
-    for (let i = 0; i < landmarks.length; i++) {
-      const p = landmarks[i];
-      const existing = points[i];
-      if (existing) {
-        existing.x = p.x;
-        existing.y = p.y;
-        existing.z = p.z ?? 0;
-      } else {
-        points[i] = { x: p.x, y: p.y, z: p.z ?? 0 };
-      }
-    }
+    // Results own their points. Retaining one result for analysis or an overlay
+    // must not let a later detection silently mutate its raw/normalized data.
+    const points: Point3D[] = landmarks.map((p) => ({ x: p.x, y: p.y, z: p.z ?? 0 }));
+    const imageSize = this.getImageSize(imageSource);
     const semantic = this.mapper.map(points);
     const bbox = this.computeBBox(points);
-    const pose = this.computePose(points, semantic, matrix);
-    const quality = this.computeQuality(pose, bbox, semantic, points.length);
+    const pose = this.computePose(points, semantic, matrix, imageSize);
+    const quality = this.computeQuality(pose, bbox, semantic, points.length, temporal);
+    if (faceCount > 1) quality.warnings.push("MULTIPLE_FACES");
 
     return {
       source,
       timestamp,
+      imageSize,
+      faceCount,
       landmarks: {
         raw: points,
         normalized: points,
@@ -322,6 +350,26 @@ export class MediaPipeFaceTracker implements IFaceTracker {
       bbox,
       quality,
     };
+  }
+
+  private getImageSize(input: unknown): { width: number; height: number } | undefined {
+    let width: number;
+    let height: number;
+    if (input instanceof HTMLVideoElement) {
+      width = input.videoWidth;
+      height = input.videoHeight;
+    } else if (input instanceof HTMLImageElement) {
+      width = input.naturalWidth;
+      height = input.naturalHeight;
+    } else if (input instanceof HTMLCanvasElement ||
+      (typeof ImageBitmap !== "undefined" && input instanceof ImageBitmap)) {
+      width = input.width;
+      height = input.height;
+    } else {
+      return undefined;
+    }
+    return Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0
+      ? { width, height } : undefined;
   }
 
   private computeBBox(points: Point3D[]): NormalizedRect {
@@ -347,6 +395,7 @@ export class MediaPipeFaceTracker implements IFaceTracker {
     points: Point3D[],
     semantic: NormalizedFaceResult["landmarks"]["semantic"],
     matrix: number[] | undefined,
+    imageSize?: { width: number; height: number },
   ): FacePose {
     if (matrix && matrix.length >= 16) {
       const euler = decomposeMatrixToEuler(matrix);
@@ -364,9 +413,12 @@ export class MediaPipeFaceTracker implements IFaceTracker {
     const nose = semantic.noseTip ?? points[1];
     const forehead = semantic.foreheadCenter ?? points[10];
     const chin = semantic.chin ?? points[152];
+    if (!le || !re || !nose || !forehead || !chin) {
+      return { yaw: 0, pitch: 0, roll: 0, confidence: 0 };
+    }
 
     const eyeDX = re.x - le.x;
-    const eyeDY = re.y - le.y;
+    const eyeDY = (re.y - le.y) * (imageSize ? imageSize.height / imageSize.width : 1);
     const roll = Math.atan2(eyeDY, eyeDX);
 
     // Yaw from nose lateral offset relative to eye line midpoint.
@@ -387,6 +439,7 @@ export class MediaPipeFaceTracker implements IFaceTracker {
     bbox: NormalizedRect,
     semantic: NormalizedFaceResult["landmarks"]["semantic"],
     pointCount: number,
+    temporal = true,
   ): FaceQuality {
     const warnings: FaceQualityWarning[] = [];
 
@@ -402,7 +455,7 @@ export class MediaPipeFaceTracker implements IFaceTracker {
     // Stability from eye-center jitter history.
     const ec = semantic.eyesCenter;
     let stabilityScore = 1;
-    if (ec) {
+    if (ec && temporal) {
       this.eyeHistory.push(ec);
       if (this.eyeHistory.length > MediaPipeFaceTracker.HISTORY_SIZE) this.eyeHistory.shift();
       stabilityScore = this.computeStability(this.eyeHistory);

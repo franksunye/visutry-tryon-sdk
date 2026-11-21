@@ -14,6 +14,12 @@ export interface Point2D {
   y: number;
 }
 
+/** Source image dimensions in pixels, after the adapter's orientation transform. */
+export interface ImageSize {
+  width: number;
+  height: number;
+}
+
 export interface Point3D {
   x: number;
   y: number;
@@ -109,7 +115,9 @@ export type FaceQualityWarning =
   | "MISSING_KEY_POINTS"
   | "EXCESSIVE_TILT"
   | "ASYMMETRIC_FACE"
-  | "MULTIPLE_FACES";
+  | "MULTIPLE_FACES"
+  | "INVALID_IMAGE_SIZE"
+  | "INVALID_LANDMARKS";
 
 export interface FaceQuality {
   confidence: number;
@@ -143,6 +151,14 @@ export interface LandmarkConnections {
 export interface NormalizedFaceResult {
   source: FaceResultSource;
   timestamp: number;
+  /**
+   * Dimensions of the image whose x/W and y/H coordinates appear below.
+   * Required for geometry analysis; absent/invalid dimensions reject analysis.
+   * Optional in the type for existing tracking-only adapters.
+   */
+  imageSize?: ImageSize;
+  /** Number of detected faces when the adapter can report it. */
+  faceCount?: number;
   landmarks: {
     raw: Point3D[];
     normalized: Point3D[];
@@ -232,8 +248,15 @@ export interface WechatCanvasTarget {
   [key: string]: unknown;
 }
 
+/** Structural canvas contract; concrete DOM or native types belong to adapters. */
+export interface CanvasRenderTarget {
+  width: number;
+  height: number;
+  getContext(contextId: string): unknown;
+}
+
 export type RenderTarget =
-  | HTMLCanvasElement
+  | CanvasRenderTarget
   | { readonly __brand: "HTMLCanvasElement"; el: unknown }
   | string
   | WechatCanvasTarget;
@@ -248,12 +271,12 @@ export interface RenderOptions {
   maxTextureSize?: number;
 }
 
-export interface IRenderer {
+export interface IRenderer<TBlob = unknown> {
   initialize(target: RenderTarget, options?: RenderOptions): Promise<void>;
   loadGlasses(asset: GlassesAssetManifest): Promise<void>;
   applyPose(pose: GlassesPose): void;
   setVisible(visible: boolean): void;
-  snapshot(options?: SnapshotOptions): Promise<SnapshotResult>;
+  snapshot(options?: SnapshotOptions): Promise<SnapshotResult<TBlob>>;
   resize(width: number, height: number): void;
   dispose(): void;
 }
@@ -393,6 +416,14 @@ export interface QualityGateResult {
 // ---------------------------------------------------------------------------
 
 export interface FaceMetrics {
+  /**
+   * True only when source dimensions, 2D geometry and geometric quality checks
+   * are valid. Legacy metrics without this marker cannot be classified.
+   */
+  geometryValid?: boolean;
+  /** Blocking geometry warnings; does not include tracker confidence/stability. */
+  geometryWarnings?: FaceQualityWarning[];
+  /** 2D lengths below use source-image-width units, never physical millimeters. */
   faceWidth: number;
   faceHeight: number;
   cheekboneWidth: number;
@@ -407,11 +438,15 @@ export interface FaceMetrics {
   widthHeightRatio: number;
   jawCheekRatio: number;
   foreheadCheekRatio?: number;
-  /** Eye line tilt in degrees (0 = level). Positive = right higher. */
+  /** Eye line tilt in degrees in image coordinates (y down; positive = right lower). */
   eyeLineTiltDeg?: number;
   /** Symmetry offset: nose bridge deviation from face center (0..1, 0 = perfect). */
   symmetryOffset?: number;
-  /** Face span: max(width, height) of bounding box in normalized coords. */
+  /** Horizontal face extent as a fraction of source image width. */
+  faceSpanX?: number;
+  /** Vertical face extent as a fraction of source image height. */
+  faceSpanY?: number;
+  /** Legacy summary: max(faceSpanX, faceSpanY); not an analysis acceptance rule. */
   faceSpan?: number;
   chinType: "pointed" | "rounded" | "square" | "unknown";
   measurementQuality: number;
@@ -466,6 +501,8 @@ export interface FaceShapeResult {
   confidence: number;
   metrics: FaceMetrics;
   warnings: FaceQualityWarning[];
+  /** Geometry explanations for the primary shape; empty for rejected results. */
+  signals?: string[];
   version: string;
 }
 
@@ -501,16 +538,49 @@ export interface GlassesItem {
   price?: number;
 }
 
+/**
+ * Physical dimensions supplied and validated by the host application.
+ * `source` records the host's assertion; the SDK cannot verify measurement
+ * provenance or calibration accuracy. All supplied distances must be finite
+ * and greater than zero. Normalized image distances are not physical inputs.
+ */
+export interface PhysicalFaceMeasurements {
+  faceWidthMm: number;
+  eyeCenterDistanceMm?: number;
+  source: "measured" | "calibrated";
+}
+
 export interface RecommendationInput {
-  faceShape: FaceShapeResult;
+  /** Omit for generic preference-based recommendations. */
+  faceShape?: FaceShapeResult;
+  /** @deprecated Image-space metrics do not establish physical size; ignored. */
   faceMetrics?: FaceMetrics;
+  measurements?: PhysicalFaceMeasurements;
   preferences?: UserPreferences;
   inventory: GlassesItem[];
 }
 
 export interface RecommendedGlasses {
   item: GlassesItem;
+  /** Normalized rule-ranking score, not a probability or verified fit score. */
   score: number;
+  /** Whether a known, geometry-valid face result contributed shape rules. */
+  faceShapeApplied: boolean;
+  /** Availability of host-supplied physical inputs, not a physical-fit verdict. */
+  size:
+    | {
+        status: "available";
+        source: PhysicalFaceMeasurements["source"];
+        faceWidthMm: number;
+        eyeCenterDistanceMm?: number;
+        tier: "small" | "medium" | "large";
+        lensWidthRange: readonly [number, number];
+        idealFrameWidthMm: number;
+      }
+    | {
+        status: "unavailable";
+        reason: "measurements-required" | "invalid-measurements";
+      };
   reasons: string[];
   cautions?: string[];
 }
@@ -527,9 +597,10 @@ export interface SnapshotOptions {
   height?: number;
 }
 
-export interface SnapshotResult {
+/** Adapters specialize TBlob (for example the Web adapter uses the browser Blob). */
+export interface SnapshotResult<TBlob = unknown> {
   dataUrl: string;
-  blob?: Blob;
+  blob?: TBlob;
   width: number;
   height: number;
   timestamp: number;
@@ -553,6 +624,8 @@ export type SDKErrorCode =
   | "CAMERA_NOT_AVAILABLE"
   | "TRACKER_INIT_FAILED"
   | "TRACKER_DETECT_FAILED"
+  | "FACE_NOT_DETECTED"
+  | "ANALYSIS_IN_PROGRESS"
   | "RENDERER_INIT_FAILED"
   | "GLASSES_LOAD_FAILED"
   | "UNSUPPORTED_PLATFORM"
@@ -595,7 +668,7 @@ export interface VisuTrySDKEvents {
   error: (error: SDKError) => void;
 }
 
-export interface VisuTrySDK {
+export interface VisuTrySDK<TBlob = unknown> {
   initialize(): Promise<void>;
   startCamera(): Promise<void>;
   stopCamera(): void;
@@ -605,7 +678,7 @@ export interface VisuTrySDK {
   switchGlasses(asset: GlassesAssetManifest): Promise<void>;
   analyzeFaceShape(input?: FaceAnalysisInput): Promise<FaceShapeResult>;
   analyzeFaceShapeFromImage(image: unknown): Promise<FaceShapeResult>;
-  snapshot(options?: SnapshotOptions): Promise<SnapshotResult>;
+  snapshot(options?: SnapshotOptions): Promise<SnapshotResult<TBlob>>;
   on<EventName extends keyof VisuTrySDKEvents>(
     eventName: EventName,
     handler: VisuTrySDKEvents[EventName],

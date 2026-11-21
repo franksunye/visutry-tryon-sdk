@@ -52,3 +52,9 @@ jobs:
 
       - name: Build API documentation
         run: pnpm docs:api
+
+      - name: Validate publishable package archives
+        run: pnpm pack:check
+
+      - name: Verify a DOM-free external consumer
+        run: pnpm test:consumer

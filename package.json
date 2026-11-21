@@ -1,8 +1,8 @@
 {
   "name": "visutry-tryon-sdk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
-  "description": "VisuTry Face Geometry & AR Glasses Try-On SDK \u2014 H5 / WeChat Mini Program. On-device face shape analysis and real-time AR glasses try-on.",
+  "description": "VisuTry Face Geometry & AR Glasses Try-On SDK — H5 / WeChat Mini Program. On-device face shape analysis and real-time AR glasses try-on.",
   "license": "MIT",
   "author": "VisuTry",
   "homepage": "https://github.com/franksunye/visutry-tryon-sdk#readme",
@@ -57,7 +57,9 @@
     "demo:prepare": "node scripts/generate-reference-glasses.mjs --check && node scripts/prepare-demo-runtime.mjs",
     "demo:build": "pnpm demo:prepare && pnpm build && pnpm --filter visutry-web-demo build",
     "demo:test": "pnpm --filter visutry-web-demo test:e2e",
-    "demo:fixture": "node scripts/prepare-demo-fixture.mjs"
+    "demo:fixture": "node scripts/prepare-demo-fixture.mjs",
+    "pack:check": "bash scripts/publish-oidc.sh --dry-run",
+    "test:consumer": "node scripts/verify-shared-core-consumer.mjs"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.9",

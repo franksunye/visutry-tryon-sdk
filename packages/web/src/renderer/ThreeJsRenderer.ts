@@ -28,7 +28,7 @@ const UNIT_TO_MM: Record<GlassesAssetManifest["coordinateSystem"]["unit"], numbe
  *
  * The canvas is transparent so it can overlay a CSS-positioned `<video>`.
  */
-export class ThreeJsRenderer implements IRenderer {
+export class ThreeJsRenderer implements IRenderer<Blob> {
   private renderer: THREE.WebGLRenderer | null = null;
   private scene: THREE.Scene | null = null;
   private camera: THREE.OrthographicCamera | null = null;
@@ -171,7 +171,7 @@ export class ThreeJsRenderer implements IRenderer {
     this.renderer.render(this.scene, this.camera);
   }
 
-  async snapshot(options?: SnapshotOptions): Promise<SnapshotResult> {
+  async snapshot(options?: SnapshotOptions): Promise<SnapshotResult<Blob>> {
     if (this.disposed) {
       throw createSDKError("SNAPSHOT_FAILED", t("error.renderer_disposed"));
     }

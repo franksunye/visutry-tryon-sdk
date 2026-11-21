@@ -26,7 +26,24 @@ export type { SemanticIndexMap, FaceSemanticMapperOptions } from "./face/FaceSem
 export { FaceMetricsCalculator } from "./face/FaceMetricsCalculator.js";
 
 // Face shape scoring
-export { FaceShapeScorer, FACE_SHAPE_SCORER_VERSION } from "./face/FaceShapeScorer.js";
+export {
+  FaceShapeScorer,
+  FACE_SHAPE_SCORER_VERSION,
+  buildGeometrySignals,
+  classifyFaceGeometry,
+  classifyJawProfile,
+  classifyUpperFaceProfile,
+} from "./face/FaceShapeScorer.js";
+
+// Geometry quality shared by tracking and landmark-only application adapters
+export {
+  computeGeometryQualityScore,
+  getFaceGeometryWarnings,
+  getFaceGeometryAdvisories,
+  isValidImageSize,
+  isFinitePoint2D,
+} from "./face/geometryQuality.js";
+export type { FaceGeometryAdvisory } from "./face/geometryQuality.js";
 
 // Shared face quality thresholds
 export { MAX_TILT_DEG, MAX_SYMMETRY_OFFSET, MIN_FACE_SPAN } from "./face/constants.js";

@@ -1,332 +1,402 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import type {
+  FaceShape,
+  FaceShapeResult,
+  GlassesShape,
+  PhysicalFaceMeasurements,
   RecommendationInput,
   UserPreferences,
 } from "@visutry/tryon-core";
 import {
-  Recommender,
   FACE_SHAPE_FRAME_MATCH,
-  estimateFaceWidthMm,
+  Recommender,
   estimateEyeCenterDistanceMm,
-  recommendSize
+  estimateFaceWidthMm,
+  recommendSize,
 } from "./index.js";
 import {
+  buildFaceShapeResult,
   buildGlassesItem,
   buildItemsByShape,
   buildMetrics,
-  buildFaceShapeResult,
 } from "./__fixtures__/fixtures.js";
 
 const recommender = new Recommender();
+const imageMetrics = buildMetrics(0.3);
+const ovalFace = buildFaceShapeResult("oval", imageMetrics);
+const physicalMeasurements: PhysicalFaceMeasurements = {
+  faceWidthMm: 140,
+  source: "measured",
+};
 
-/** Medium face: normalized faceWidth 0.3 -> ~140mm -> medium tier. */
-const mediumMetrics = buildMetrics(0.3);
-const ovalFace = buildFaceShapeResult("oval", mediumMetrics);
-
-/** Helper to run recommend with the oval/medium baseline. */
 function recommendOval(
   inventory: RecommendationInput["inventory"],
   preferences?: UserPreferences,
+  measurements?: PhysicalFaceMeasurements,
 ) {
   return recommender.recommend({
     faceShape: ovalFace,
     inventory,
     preferences,
+    measurements,
   });
 }
 
-// ---------------------------------------------------------------------------
-// Shape x frame matching (spec §16.3 / §16.5)
-// ---------------------------------------------------------------------------
-
-describe("Recommender — shape matching", () => {
-  it("matches an oval face: rectangle scores higher than a non-matching shape", () => {
-    const results = recommendOval(
-      buildItemsByShape(["rectangle", "cat-eye"]),
-    );
-    const rect = results.find((r) => r.item.shapeCategory === "rectangle")!;
-    const catEye = results.find((r) => r.item.shapeCategory === "cat-eye")!;
-
-    // shape 40 + size 30 + price 10 = 80 -> 0.8 (rectangle, match)
-    expect(rect.score).toBeCloseTo(0.8, 5);
-    // shape 0 + size 30 + price 10 = 40 -> 0.4 (cat-eye, no match)
-    expect(catEye.score).toBeCloseTo(0.4, 5);
-    expect(results[0].item.shapeCategory).toBe("rectangle");
-  });
-
-  it("round face: angular frames (rectangle) beat round frames", () => {
+describe("face-shape rules require an explicitly valid analysis", () => {
+  it.each<[FaceShape, GlassesShape, GlassesShape]>([
+    ["oval", "rectangle", "cat-eye"],
+    ["round", "rectangle", "round"],
+    ["square", "round", "rectangle"],
+    ["heart", "rectangle", "round"],
+    ["diamond", "oval", "rectangle"],
+    ["oblong", "round", "rectangle"],
+    ["triangle", "aviator", "rectangle"],
+  ])("applies the %s rule without inventing physical size", (face, match, other) => {
     const results = recommender.recommend({
-      faceShape: buildFaceShapeResult("round", mediumMetrics),
-      inventory: buildItemsByShape(["rectangle", "round"]),
+      faceShape: buildFaceShapeResult(face, imageMetrics),
+      inventory: buildItemsByShape([other, match]),
     });
-    const rect = results.find((r) => r.item.shapeCategory === "rectangle")!;
-    const round = results.find((r) => r.item.shapeCategory === "round")!;
-    expect(rect.score).toBeCloseTo(0.8, 5);
-    expect(round.score).toBeCloseTo(0.4, 5);
+    // Matching shape 40 + neutral size 15 + known price 10.
+    expect(results[0].item.shapeCategory).toBe(match);
+    expect(results[0].score).toBe(0.65);
+    expect(results[1].score).toBe(0.25);
+    expect(results.every((r) => r.faceShapeApplied)).toBe(true);
+    expect(results.every((r) => r.size.status === "unavailable")).toBe(true);
+    expect(results[0].reasons.join(" ")).toContain("heuristic rule table");
+    expect(results[1].cautions?.join(" ")).toContain("not selected");
   });
 
-  it("square face: round frames beat rectangle frames", () => {
-    const results = recommender.recommend({
-      faceShape: buildFaceShapeResult("square", mediumMetrics),
-      inventory: buildItemsByShape(["round", "rectangle"]),
-    });
-    const round = results.find((r) => r.item.shapeCategory === "round")!;
-    const rect = results.find((r) => r.item.shapeCategory === "rectangle")!;
-    expect(round.score).toBeCloseTo(0.8, 5);
-    expect(rect.score).toBeCloseTo(0.4, 5);
-  });
+  const unavailableAnalyses: Array<[string, FaceShapeResult | undefined]> = [
+    ["missing analysis", undefined],
+    ["unknown shape", buildFaceShapeResult("unknown", imageMetrics)],
+    [
+      "blocking analysis warning with valid geometry",
+      { ...ovalFace, warnings: ["LOW_CONFIDENCE"] },
+    ],
+    [
+      "blocking geometry warning despite a valid flag",
+      buildFaceShapeResult(
+        "oval",
+        buildMetrics(0.3, {
+          geometryValid: true,
+          geometryWarnings: ["FACE_TOO_SMALL"],
+        }),
+      ),
+    ],
+    [
+      "rejected geometry",
+      buildFaceShapeResult(
+        "oval",
+        buildMetrics(0.3, {
+          geometryValid: false,
+          measurementQuality: 0,
+        }),
+      ),
+    ],
+    [
+      "legacy metrics without validity",
+      buildFaceShapeResult(
+        "oval",
+        buildMetrics(0.3, {
+          geometryValid: undefined,
+        }),
+      ),
+    ],
+    ...[0, -1, NaN, Infinity, 1.1].map((confidence): [string, FaceShapeResult] => [
+      "invalid or absent confidence " + confidence,
+      { ...ovalFace, confidence },
+    ]),
+  ];
 
-  it("heart face: rectangle beats round", () => {
+  it.each(unavailableAnalyses)("%s uses generic preference ranking", (_name, faceShape) => {
     const results = recommender.recommend({
-      faceShape: buildFaceShapeResult("heart", mediumMetrics),
-      inventory: buildItemsByShape(["rectangle", "round"]),
-    });
-    const rect = results.find((r) => r.item.shapeCategory === "rectangle")!;
-    const round = results.find((r) => r.item.shapeCategory === "round")!;
-    expect(rect.score).toBeCloseTo(0.8, 5);
-    expect(round.score).toBeCloseTo(0.4, 5);
-  });
-
-  it("diamond face: oval beats rectangle", () => {
-    const results = recommender.recommend({
-      faceShape: buildFaceShapeResult("diamond", mediumMetrics),
-      inventory: buildItemsByShape(["oval", "rectangle"]),
-    });
-    const oval = results.find((r) => r.item.shapeCategory === "oval")!;
-    const rect = results.find((r) => r.item.shapeCategory === "rectangle")!;
-    expect(oval.score).toBeCloseTo(0.8, 5);
-    expect(rect.score).toBeCloseTo(0.4, 5);
-  });
-
-  it("oblong face: round beats rectangle", () => {
-    const results = recommender.recommend({
-      faceShape: buildFaceShapeResult("oblong", mediumMetrics),
-      inventory: buildItemsByShape(["round", "rectangle"]),
-    });
-    const round = results.find((r) => r.item.shapeCategory === "round")!;
-    const rect = results.find((r) => r.item.shapeCategory === "rectangle")!;
-    expect(round.score).toBeCloseTo(0.8, 5);
-    expect(rect.score).toBeCloseTo(0.4, 5);
-  });
-
-  it("unknown face: every frame gets a neutral medium weight", () => {
-    const results = recommender.recommend({
-      faceShape: buildFaceShapeResult("unknown", mediumMetrics),
+      faceShape,
       inventory: buildItemsByShape(["rectangle", "cat-eye"]),
+      preferences: { preferredShapes: ["cat-eye"] },
     });
-    const rect = results.find((r) => r.item.shapeCategory === "rectangle")!;
-    const catEye = results.find((r) => r.item.shapeCategory === "cat-eye")!;
-    // shape 20 + size 30 + price 10 = 60 -> 0.6 for both
-    expect(rect.score).toBeCloseTo(0.6, 5);
-    expect(catEye.score).toBeCloseTo(0.6, 5);
+    expect(results[0].item.shapeCategory).toBe("cat-eye");
+    // Neutral shape 20 + explicit preference 20 + neutral size 15 + price 10.
+    expect(results[0].score).toBe(0.65);
+    expect(results[1].score).toBe(0.45);
+    expect(results.every((r) => !r.faceShapeApplied)).toBe(true);
+    expect(
+      results.every((r) =>
+        r.cautions?.some((c) => c.includes("face-shape rules were not applied")),
+      ),
+    ).toBe(true);
+    expect(results.flatMap((r) => r.reasons).join(" ")).not.toContain("for a oval face");
   });
 
-  it("non-matching shape produces a shape caution", () => {
-    const results = recommendOval(buildItemsByShape(["cat-eye"]));
-    const catEye = results[0];
-    expect(catEye.cautions).toBeDefined();
-    expect(catEye.cautions!.some((c) => c.includes("not typically recommended"))).toBe(true);
+  it("does not turn heuristic confidence into a probability cutoff", () => {
+    const inventory = buildItemsByShape(["rectangle", "cat-eye"]);
+    const run = (confidence: number) =>
+      recommender.recommend({
+        faceShape: { ...ovalFace, confidence },
+        inventory,
+      });
+    expect(run(0.01)).toEqual(run(0.9));
   });
 
-  it("preferredShapes lifts a non-matching frame to a medium weight", () => {
-    // cat-eye does not match an oval face (0) -> with preference it becomes 20.
-    const withPref = recommendOval(buildItemsByShape(["cat-eye"]), {
-      preferredShapes: ["cat-eye"],
-    });
-    const withoutPref = recommendOval(buildItemsByShape(["cat-eye"]));
-    expect(withoutPref[0].score).toBeCloseTo(0.4, 5);
-    // shape 20 + size 30 + price 10 = 60 -> 0.6
-    expect(withPref[0].score).toBeCloseTo(0.6, 5);
-  });
-
-  it("exposes the FACE_SHAPE_FRAME_MATCH table", () => {
+  it("exposes inspectable rules and respects an explicit shape preference", () => {
     expect(FACE_SHAPE_FRAME_MATCH.oval).toContain("rectangle");
     expect(FACE_SHAPE_FRAME_MATCH.unknown).toEqual([]);
+    const inventory = buildItemsByShape(["cat-eye"]);
+    expect(recommendOval(inventory)[0].score).toBe(0.25);
+    expect(recommendOval(inventory, { preferredShapes: ["cat-eye"] })[0].score).toBe(0.45);
   });
 });
 
-// ---------------------------------------------------------------------------
-// Size recommendation (spec §16.4)
-// ---------------------------------------------------------------------------
-
-describe("Recommender — size recommendation", () => {
-  it("estimateFaceWidthMm converts normalized faceWidth to mm (0.3 -> 140)", () => {
-    expect(estimateFaceWidthMm(buildMetrics(0.3))).toBeCloseTo(140, 5);
-  });
-
-  it("estimateFaceWidthMm falls back to average when metric is invalid", () => {
-    expect(estimateFaceWidthMm(buildMetrics(0))).toBeCloseTo(140, 5);
-    expect(estimateFaceWidthMm(buildMetrics(0.3, { faceWidth: -1 }))).toBeCloseTo(140, 5);
-  });
-
-  it("classifies the three size tiers correctly", () => {
-    const small = recommendSize(buildMetrics(0.25)); // ~116.7mm
-    const medium = recommendSize(buildMetrics(0.3)); // ~140mm
-    const large = recommendSize(buildMetrics(0.34)); // ~158.7mm
-
-    expect(small.tier).toBe("small");
-    expect(small.lensWidthRange).toEqual([38, 46]);
-    expect(small.faceWidthMm).toBeLessThan(130);
-
-    expect(medium.tier).toBe("medium");
-    expect(medium.lensWidthRange).toEqual([46, 52]);
-    expect(medium.faceWidthMm).toBeGreaterThanOrEqual(130);
-    expect(medium.faceWidthMm).toBeLessThanOrEqual(145);
-
-    expect(large.tier).toBe("large");
-    expect(large.lensWidthRange).toEqual([52, 58]);
-    expect(large.faceWidthMm).toBeGreaterThan(145);
-  });
-
-  it("awards full size score for a perfect medium-face fit", () => {
-    // frameWidth 140 (==face) + lensWidth 50 (in 46-52) -> size 30
-    const results = recommendOval([
-      buildGlassesItem("perfect", {
-        shapeCategory: "rectangle",
-        dimensions: { frameWidthMm: 140, lensWidthMm: 50 },
-      }),
-    ]);
-    // shape 40 + size 30 + price 10 = 80 -> 0.8
-    expect(results[0].score).toBeCloseTo(0.8, 5);
-    expect(results[0].cautions).toBeUndefined();
-  });
-
-  it("uses input.faceMetrics override when provided", () => {
-    // faceShape carries medium metrics, but faceMetrics overrides to large.
-    const results = recommender.recommend({
-      faceShape: ovalFace,
-      faceMetrics: buildMetrics(0.34), // large face ~158.7mm
-      inventory: [
-        buildGlassesItem("large-fit", {
-          shapeCategory: "rectangle",
-          dimensions: { frameWidthMm: 159, lensWidthMm: 55 }, // perfect for large
-        }),
-      ],
+describe("physical size requires host-supplied measurements", () => {
+  it("does not infer millimeters or an average from any image-space width", () => {
+    for (const width of [0, -1, 0.15, 0.3, 0.6, NaN, Infinity]) {
+      const metrics = buildMetrics(width, { eyeCenterDistance: width });
+      expect(estimateFaceWidthMm(metrics)).toBeUndefined();
+      expect(estimateEyeCenterDistanceMm(metrics)).toBeUndefined();
+      // A pre-migration JavaScript call must fail closed, not turn pixels into mm.
+      expect(recommendSize(metrics as unknown as PhysicalFaceMeasurements)).toEqual({
+        status: "unavailable",
+        reason: "invalid-measurements",
+      });
+    }
+    expect(recommendSize()).toEqual({
+      status: "unavailable",
+      reason: "measurements-required",
     });
-    // shape 40 + size 30 (perfect on large tier) + price 10 = 80 -> 0.8
-    expect(results[0].score).toBeCloseTo(0.8, 5);
-    expect(results[0].cautions).toBeUndefined();
   });
 
-  it("estimates eye-center distance in mm", () => {
-    // 0.3 * 0.53 = 0.159 normalized -> * (140/0.3) ~= 74.2mm
-    const mm = estimateEyeCenterDistanceMm(buildMetrics(0.3));
-    expect(mm).toBeGreaterThan(70);
-    expect(mm).toBeLessThan(80);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Brand / color / material preferences (spec §16.5)
-// ---------------------------------------------------------------------------
-
-describe("Recommender — preferences", () => {
-  it("adds a brand preference bonus", () => {
-    const results = recommendOval(
-      [
-        buildGlassesItem("branded", { shapeCategory: "rectangle", brand: "Ray-Ban" }),
-        buildGlassesItem("plain", { shapeCategory: "rectangle" }),
-      ],
-      { brands: ["Ray-Ban"] },
-    );
-    const branded = results.find((r) => r.item.id === "branded")!;
-    const plain = results.find((r) => r.item.id === "plain")!;
-    // branded: 40 + 30 + 10 + 10 = 90 -> 0.9 ; plain: 40 + 30 + 10 = 80 -> 0.8
-    expect(branded.score).toBeCloseTo(0.9, 5);
-    expect(plain.score).toBeCloseTo(0.8, 5);
-    expect(results[0].item.id).toBe("branded");
+  it.each<[number, string, number[]]>([
+    [120, "small", [38, 46]],
+    [130, "medium", [46, 52]],
+    [140, "medium", [46, 52]],
+    [145, "medium", [46, 52]],
+    [146, "large", [52, 58]],
+  ])("applies explicit %s mm input to the documented tier rules", (faceWidthMm, tier, range) => {
+    const size = recommendSize({ faceWidthMm, source: "measured" });
+    expect(size).toMatchObject({
+      status: "available",
+      faceWidthMm,
+      idealFrameWidthMm: faceWidthMm,
+      source: "measured",
+      tier,
+      lensWidthRange: range,
+    });
+    expect(size).not.toHaveProperty("eyeCenterDistanceMm");
   });
 
-  it("adds color and material preference bonuses", () => {
-    const results = recommendOval(
-      [
-        buildGlassesItem("styled", {
-          shapeCategory: "rectangle",
-          material: "acetate",
-          colors: ["black", "tortoise"],
+  it.each(["measured", "calibrated"] as const)(
+    "preserves the host's %s source and optional distance",
+    (source) => {
+      expect(
+        recommendSize({
+          faceWidthMm: 140,
+          eyeCenterDistanceMm: 62,
+          source,
         }),
-      ],
-      { preferredMaterials: ["acetate"], preferredColors: ["black"] },
+      ).toMatchObject({
+        status: "available",
+        source,
+        faceWidthMm: 140,
+        eyeCenterDistanceMm: 62,
+      });
+    },
+  );
+
+  it.each([
+    { faceWidthMm: 0, source: "measured" },
+    { faceWidthMm: -1, source: "measured" },
+    { faceWidthMm: NaN, source: "measured" },
+    { faceWidthMm: Infinity, source: "calibrated" },
+    { faceWidthMm: "140", source: "measured" },
+    { faceWidthMm: 140, source: "estimated" },
+    { faceWidthMm: 140 },
+    {},
+    { faceWidthMm: 140, source: "measured", eyeCenterDistanceMm: 0 },
+    { faceWidthMm: 140, source: "measured", eyeCenterDistanceMm: -1 },
+    { faceWidthMm: 140, source: "measured", eyeCenterDistanceMm: NaN },
+    { faceWidthMm: 140, source: "measured", eyeCenterDistanceMm: Infinity },
+    { faceWidthMm: 140, source: "measured", eyeCenterDistanceMm: null },
+    { faceWidthMm: 140, source: "measured", eyeCenterDistanceMm: "63" },
+  ])("rejects invalid physical input: %j", (input) => {
+    const measurements = input as unknown as PhysicalFaceMeasurements;
+    expect(recommendSize(measurements)).toEqual({
+      status: "unavailable",
+      reason: "invalid-measurements",
+    });
+    const [result] = recommendOval([buildGlassesItem("frame")], undefined, measurements);
+    expect(result.size.status).toBe("unavailable");
+    expect(result.score).toBe(0.65);
+    expect(result.cautions?.join(" ")).toContain("measurements are invalid");
+    expect(result.reasons.join(" ")).not.toContain("supplied face width");
+  });
+
+  const sizeCatalog = [
+    buildGlassesItem("small", { dimensions: { frameWidthMm: 120, lensWidthMm: 44 } }),
+    buildGlassesItem("medium", { dimensions: { frameWidthMm: 140, lensWidthMm: 50 } }),
+    buildGlassesItem("large", { dimensions: { frameWidthMm: 160, lensWidthMm: 55 } }),
+  ];
+
+  it("photo scaling cannot change an unavailable size or invent a size ranking", () => {
+    const run = (width: number) =>
+      recommender.recommend({
+        faceShape: buildFaceShapeResult("oval", buildMetrics(width)),
+        inventory: sizeCatalog,
+      });
+    expect(run(0.15)).toEqual(run(0.3));
+    expect(run(0.6)).toEqual(run(0.3));
+    expect(run(0.3).map((r) => r.score)).toEqual([0.65, 0.65, 0.65]);
+    expect(run(0.3).map((r) => r.item.id)).toEqual(["small", "medium", "large"]);
+    for (const result of run(0.3)) {
+      expect(result.size).toEqual({ status: "unavailable", reason: "measurements-required" });
+      expect(result.size).not.toHaveProperty("faceWidthMm");
+      expect(result.size).not.toHaveProperty("tier");
+    }
+  });
+
+  it("explicit measurements stay independent of photo scale and legacy metric overrides", () => {
+    const run = (width: number) =>
+      recommender.recommend({
+        faceShape: buildFaceShapeResult("oval", buildMetrics(width)),
+        faceMetrics: buildMetrics(NaN),
+        measurements: physicalMeasurements,
+        inventory: sizeCatalog,
+      });
+    expect(run(0.15)).toEqual(run(0.6));
+    expect(run(0.3)[0].item.id).toBe("medium");
+    expect(run(0.3)[0].score).toBe(0.8);
+    expect(run(0.3)[0].size).toMatchObject({ status: "available", faceWidthMm: 140 });
+
+    const noPhysicalInput = recommender.recommend({
+      faceShape: ovalFace,
+      faceMetrics: buildMetrics(0.9),
+      inventory: sizeCatalog,
+    });
+    expect(noPhysicalInput.map((r) => r.score)).toEqual([0.65, 0.65, 0.65]);
+  });
+
+  it("can use independent physical measurements when face shape is unknown", () => {
+    const results = recommender.recommend({
+      faceShape: buildFaceShapeResult("unknown", buildMetrics(0.3, { geometryValid: false })),
+      measurements: physicalMeasurements,
+      inventory: sizeCatalog,
+    });
+    expect(results[0].item.id).toBe("medium");
+    expect(results[0].score).toBe(0.6);
+    expect(results[0].faceShapeApplied).toBe(false);
+    expect(results[0].size.status).toBe("available");
+  });
+
+  it("uses neutral weights for missing or invalid catalog dimensions", () => {
+    for (const dimensions of [
+      undefined,
+      {},
+      { frameWidthMm: NaN, lensWidthMm: Infinity },
+      { frameWidthMm: 0, lensWidthMm: -1 },
+    ]) {
+      const [result] = recommendOval(
+        [buildGlassesItem("unknown", { dimensions })],
+        undefined,
+        physicalMeasurements,
+      );
+      expect(result.score).toBe(0.65);
+      expect(result.cautions?.join(" ")).toContain("Valid glasses dimensions unavailable");
+    }
+    for (const dimensions of [
+      { frameWidthMm: 140 },
+      { lensWidthMm: 50 },
+      { frameWidthMm: 140, lensWidthMm: NaN },
+    ]) {
+      const [result] = recommendOval(
+        [buildGlassesItem("partial", { dimensions })],
+        undefined,
+        physicalMeasurements,
+      );
+      expect(result.score).toBe(0.725);
+    }
+  });
+
+  it("explains mismatches against supplied physical measurements", () => {
+    const [result] = recommendOval(
+      [buildGlassesItem("too-big", { dimensions: { frameWidthMm: 180, lensWidthMm: 60 } })],
+      undefined,
+      physicalMeasurements,
     );
-    // 40 + 30 + 5 (material) + 5 (color) + 10 = 90 -> 0.9
-    expect(results[0].score).toBeCloseTo(0.9, 5);
-    expect(results[0].reasons.some((r) => r.includes("acetate"))).toBe(true);
-    expect(results[0].reasons.some((r) => r.includes("black"))).toBe(true);
+    expect(result.score).toBe(0.5);
+    expect(result.cautions?.join(" ")).toContain("20mm rule tolerance");
+    expect(result.cautions?.join(" ")).toContain("above the rule's 46-52mm range");
+  });
+
+  it("uses eye-center distance only when explicitly supplied, without changing its score", () => {
+    const inventory = [
+      buildGlassesItem("wide-lens", {
+        dimensions: { frameWidthMm: 140, lensWidthMm: 70 },
+      }),
+    ];
+    const [withoutEye] = recommendOval(inventory, undefined, physicalMeasurements);
+    const [withEye] = recommendOval(inventory, undefined, {
+      ...physicalMeasurements,
+      eyeCenterDistanceMm: 62,
+    });
+    expect(withEye.score).toBe(withoutEye.score);
+    expect(withoutEye.cautions?.join(" ")).not.toContain("eye-center");
+    expect(withEye.cautions?.join(" ")).toContain("supplied eye-center distance (62mm)");
   });
 });
 
-// ---------------------------------------------------------------------------
-// Price (spec §16.5)
-// ---------------------------------------------------------------------------
-
-describe("Recommender — price", () => {
-  it("filters out items exceeding maxPrice", () => {
-    const results = recommendOval(
-      [
-        buildGlassesItem("cheap", { shapeCategory: "rectangle", price: 100 }),
-        buildGlassesItem("expensive", { shapeCategory: "rectangle", price: 500 }),
+describe("generic preferences and output contract", () => {
+  it("ranks preferences without requiring a fabricated face analysis", () => {
+    const results = recommender.recommend({
+      inventory: [
+        buildGlassesItem("plain"),
+        buildGlassesItem("preferred", {
+          shapeCategory: "cat-eye",
+          brand: "Example",
+          material: "acetate",
+          colors: ["black"],
+          price: 100,
+        }),
+        buildGlassesItem("over-budget", { brand: "Example", price: 400 }),
       ],
-      { maxPrice: 200 },
-    );
-    expect(results).toHaveLength(1);
-    expect(results[0].item.id).toBe("cheap");
-    expect(results.find((r) => r.item.id === "expensive")).toBeUndefined();
+      preferences: {
+        brands: ["example"],
+        preferredShapes: ["cat-eye"],
+        preferredMaterials: ["ACETATE"],
+        preferredColors: ["BLACK"],
+        maxPrice: 200,
+      },
+    });
+    expect(results.map((r) => r.item.id)).toEqual(["preferred", "plain"]);
+    expect(results[0].score).toBe(0.85);
+    expect(results[0].faceShapeApplied).toBe(false);
+    expect(results[0].size.status).toBe("unavailable");
+    expect(results[0].reasons.join(" ")).toContain("preferred brand");
+    expect(results[0].reasons.join(" ")).toContain("acetate");
+    expect(results[0].reasons.join(" ")).toContain("black");
   });
 
-  it("keeps items without a price even when maxPrice is set", () => {
-    const results = recommendOval(
-      [buildGlassesItem("no-price", { shapeCategory: "rectangle", price: undefined })],
-      { maxPrice: 200 },
-    );
-    expect(results).toHaveLength(1);
+  it("keeps unknown prices with a budget caution and neutral price weight", () => {
+    const [result] = recommender.recommend({
+      inventory: [buildGlassesItem("unknown-price", { price: undefined })],
+      preferences: { maxPrice: 200 },
+    });
+    expect(result.score).toBe(0.4);
+    expect(result.cautions?.join(" ")).toContain("cannot be verified against your budget");
   });
-});
 
-// ---------------------------------------------------------------------------
-// Output ordering & edge cases
-// ---------------------------------------------------------------------------
-
-describe("Recommender — ordering & edge cases", () => {
-  it("returns results sorted by score descending", () => {
-    const results = recommendOval([
-      buildGlassesItem("cat-eye", { shapeCategory: "cat-eye" }), // 0.4
-      buildGlassesItem("rect-nodims", { shapeCategory: "rectangle", dimensions: undefined }), // 0.65
-      buildGlassesItem("rect", { shapeCategory: "rectangle" }), // 0.8
-    ]);
-    const scores = results.map((r) => r.score);
-    const sorted = [...scores].sort((a, b) => b - a);
-    expect(scores).toEqual(sorted);
-    // strictly decreasing in this fixture
-    expect(results[0].score).toBeGreaterThan(results[1].score);
-    expect(results[1].score).toBeGreaterThan(results[2].score);
-    expect(results[0].item.id).toBe("rect");
-    expect(results[1].item.id).toBe("rect-nodims");
-    expect(results[2].item.id).toBe("cat-eye");
+  it("preserves inventory order for ties, returns explanations and does not mutate inputs", () => {
+    const inventory = buildItemsByShape(["cat-eye", "rectangle", "aviator"]);
+    const before = structuredClone(inventory);
+    const results = recommender.recommend({ inventory });
+    expect(results.map((r) => r.item.id)).toEqual(inventory.map((r) => r.id));
+    expect(inventory).toEqual(before);
+    for (const result of results) {
+      expect(result.reasons.length).toBeGreaterThan(0);
+      expect(Number.isFinite(result.score)).toBe(true);
+      expect(result.score).toBeGreaterThanOrEqual(0);
+      expect(result.score).toBeLessThanOrEqual(1);
+    }
   });
 
   it("returns an empty array for an empty inventory", () => {
-    expect(recommendOval([])).toEqual([]);
-  });
-
-  it("generates cautions when the size does not match", () => {
-    const results = recommendOval([
-      buildGlassesItem("too-big", {
-        shapeCategory: "rectangle",
-        dimensions: { frameWidthMm: 180, lensWidthMm: 60 }, // both way off for 140mm
-      }),
-    ]);
-    expect(results[0].cautions).toBeDefined();
-    expect(results[0].cautions!.length).toBeGreaterThan(0);
-    const text = results[0].cautions!.join(" ");
-    expect(text.includes("Frame width") || text.includes("Lens width")).toBe(true);
-    // shape 40 + size 0 + price 10 = 50 -> 0.5
-    expect(results[0].score).toBeCloseTo(0.5, 5);
-  });
-
-  it("always returns reasons for every recommended item", () => {
-    const results = recommendOval(buildItemsByShape(["rectangle", "cat-eye"]));
-    for (const r of results) {
-      expect(r.reasons.length).toBeGreaterThan(0);
-    }
+    expect(recommender.recommend({ inventory: [] })).toEqual([]);
   });
 });

@@ -12,7 +12,7 @@ export default defineConfig({
   testDir: "./e2e",
   // The old demo.spec.ts describes five unreachable legacy CDN entries and
   // skips camera failures. This release gate exercises the reference demo.
-  testMatch: "reference-demo.spec.ts",
+  testMatch: ["reference-demo.spec.ts", "photo-analysis.spec.ts"],
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: 0,

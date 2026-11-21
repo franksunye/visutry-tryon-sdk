@@ -9,10 +9,8 @@ import type {
 /**
  * Build a synthetic `FaceMetrics` with a controlled normalized `faceWidth`.
  *
- * All distances stay internally consistent (ratios roughly oval-ish) so the
- * size pipeline has realistic inputs. `faceWidth` is the only value the
- * recommender's sizing reads for tiering; `eyeCenterDistance` is provided as a
- * plausible supplementary signal (~0.53 * faceWidth, matching the core fixture).
+ * Distances scale together to model a face at different image magnifications.
+ * They have no physical units and must never determine physical frame size.
  */
 export function buildMetrics(
   faceWidthNorm: number,
@@ -31,15 +29,16 @@ export function buildMetrics(
     jawCheekRatio: 0.8,
     chinType: "rounded",
     measurementQuality: 0.9,
+    geometryValid: true,
+    geometryWarnings: [],
+    faceSpanX: faceWidthNorm,
+    faceSpanY: faceWidthNorm * 1.25,
   };
   return { ...base, ...overrides };
 }
 
 /** Build a minimal `FaceShapeResult` for a given primary shape + metrics. */
-export function buildFaceShapeResult(
-  primary: FaceShape,
-  metrics: FaceMetrics,
-): FaceShapeResult {
+export function buildFaceShapeResult(primary: FaceShape, metrics: FaceMetrics): FaceShapeResult {
   return {
     primary,
     candidates: [{ shape: primary, score: 0.9, reasons: ["fixture"] }],
@@ -51,14 +50,10 @@ export function buildFaceShapeResult(
 }
 
 /**
- * Build a `GlassesItem`. Defaults describe a medium face (140mm) frame that is a
- * perfect size fit: frameWidth 140mm, lensWidth 50mm (within the 46-52mm medium
- * range). Callers override `shapeCategory` / `dimensions` / prefs as needed.
+ * Build catalog metadata. These dimensions do not establish the user's size.
+ * With explicit 140mm face measurements, they satisfy the medium-tier rules.
  */
-export function buildGlassesItem(
-  id: string,
-  overrides: Partial<GlassesItem> = {},
-): GlassesItem {
+export function buildGlassesItem(id: string, overrides: Partial<GlassesItem> = {}): GlassesItem {
   return {
     id,
     name: `Glasses ${id}`,

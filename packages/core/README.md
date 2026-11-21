@@ -46,8 +46,22 @@ export function classifyFace(face: NormalizedFaceResult): FaceShapeResult {
 ```
 
 The core does not detect faces in photographs. Use the Web image analyzer for
-that path. Handle `primary: "unknown"` and quality warnings explicitly.
+that path. Supply `face.imageSize` with the actual width and height used to
+normalize the landmarks; missing dimensions are rejected instead of assuming a
+square image. Handle `primary: "unknown"` and quality warnings explicitly.
 Confidence is a heuristic score, not a calibrated probability.
+
+For an existing detector that supplies semantic points without tracker-quality
+metadata, use `FaceMetricsCalculator.computeFromSemantic(points, imageSize)`
+followed by `FaceShapeScorer.scoreFromMetrics(metrics)`. This checks geometry
+without inventing detector confidence or temporal stability. The full `score`
+and `scoreFrames` entries also enforce tracker quality.
+
+Core's published declarations compile with `lib: ["ES2020"]` and `types: []`.
+Browser snapshot types are specialized as `VisuTrySDK<Blob>` by the Web factory;
+the platform-neutral interface defaults the blob payload to `unknown`.
+See the [shared-core example](../../examples/shared-core/README.md) and
+[0.3.0 migration guide](../../docs/migration-0.3.md).
 
 ## API surface
 

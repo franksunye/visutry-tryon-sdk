@@ -1,126 +1,102 @@
-import type { FaceMetrics, FaceSemanticPoints, NormalizedFaceResult } from "../types/index.js";
-import { distance2D, distance3D, median, trimmedMean, clamp01 } from "../utils/math.js";
+import type {
+  FaceMetrics,
+  FaceQualityWarning,
+  FaceSemanticPoints,
+  ImageSize,
+  NormalizedFaceResult,
+  Point3D,
+} from "../types/index.js";
+import { distance2D, median, trimmedMean, clamp01 } from "../utils/math.js";
+import { getFaceGeometryWarnings, isFinitePoint2D, isValidImageSize } from "./geometryQuality.js";
+
+/** The 15 semantic landmarks consumed by the canonical photo geometry model. */
+const REQUIRED_POINTS: (keyof FaceSemanticPoints)[] = [
+  "foreheadCenter", "chin", "leftFace", "rightFace", "leftCheek", "rightCheek",
+  "leftJaw", "rightJaw", "leftForehead", "rightForehead", "leftEyeOuter",
+  "rightEyeOuter", "noseLeft", "noseRight", "noseBridge",
+];
+
+function round(value: number, digits = 3): number {
+  const factor = 10 ** digits;
+  return Math.round(value * factor) / factor;
+}
 
 /**
- * Computes geometric `FaceMetrics` from `FaceSemanticPoints`.
+ * Pure 2D photo geometry, independent of detector depth conventions.
  *
- * Design rules (spec §12.2):
- *  - All distances use normalized coordinates.
- *  - Missing points are tolerated — a metric is simply left undefined / the
- *    measurement quality degrades. The calculator never throws on missing data.
- *  - Every result carries a `measurementQuality` in [0,1].
- *  - Multi-frame analysis aggregates via median (distances) / trimmed mean (ratios).
+ * x/W and y/H are converted to a common image-width scale before any length,
+ * angle or ratio is computed. Spans alone retain their respective image-axis
+ * units. Missing dimensions or invalid points never imply a square image.
  */
 export class FaceMetricsCalculator {
-  private static readonly KEY_POINT_COUNT = 23;
-
-  /**
-   * Compute metrics for a single normalized face result.
-   */
   compute(face: NormalizedFaceResult): FaceMetrics {
-    return this.computeFromSemantic(face.landmarks.semantic);
+    return this.computeFromSemantic(face.landmarks.semantic, face.imageSize);
   }
 
   /**
-   * Compute metrics directly from semantic points. This is the core entry
-   * point — `NormalizedFaceResult` is only a thin wrapper around it.
+   * Accept normalized semantic points and the dimensions of their source image.
+   * Missing points produce partial finite metrics and explicit invalid geometry.
+   * Ratios use the main application's canonical rounding (3 decimals; tilt 1).
    */
-  computeFromSemantic(s: FaceSemanticPoints): FaceMetrics {
-    const present = this.countKeyPoints(s);
+  computeFromSemantic(semantic: FaceSemanticPoints, imageSize?: ImageSize): FaceMetrics {
+    if (!isValidImageSize(imageSize)) return this.emptyMetrics(["INVALID_IMAGE_SIZE"]);
+    if (Object.values(semantic).some((point) => point !== undefined && !isFinitePoint2D(point))) {
+      return this.emptyMetrics(["INVALID_LANDMARKS"]);
+    }
 
-    // --- Horizontal widths -------------------------------------------------
-    const cheekboneWidth = this.safeDistance(s.leftCheek, s.rightCheek);
-    const jawWidth = this.safeDistance(s.leftJaw, s.rightJaw);
-    const eyeOuterDistance = this.safeDistance(s.leftEyeOuter, s.rightEyeOuter);
-    const eyeInnerDistance = this.safeDistance(s.leftEyeInner, s.rightEyeInner);
-    const eyeCenterDistance = this.safeDistance(s.leftEyeCenter, s.rightEyeCenter);
+    const aspect = imageSize.height / imageSize.width;
+    const points: FaceSemanticPoints = {};
+    for (const key of Object.keys(semantic) as (keyof FaceSemanticPoints)[]) {
+      const point = semantic[key];
+      if (point) points[key] = { x: point.x, y: point.y * aspect };
+    }
+    if (Object.values(points).some((point) => !isFinitePoint2D(point))) {
+      return this.emptyMetrics(["INVALID_LANDMARKS"]);
+    }
 
-    // visutry additions: face outline width, forehead width, nose bridge width
-    const faceOutlineWidth = this.safeDistance(s.leftFace, s.rightFace);
-    const foreheadWidth = this.safeDistance(s.leftForehead, s.rightForehead);
-    const noseBridgeWidth = this.safeDistance(s.noseLeft, s.noseRight);
-
-    // faceWidth: prefer face outline width (widest part, visutry convention);
-    // fall back to cheekbone width, then eye outer distance.
+    const cheekboneWidth = this.safeDistance(points.leftCheek, points.rightCheek);
+    const jawWidth = this.safeDistance(points.leftJaw, points.rightJaw);
+    const eyeOuterDistance = this.safeDistance(points.leftEyeOuter, points.rightEyeOuter);
+    const eyeInnerDistance = this.safeDistance(points.leftEyeInner, points.rightEyeInner);
+    const eyeCenterDistance = this.safeDistance(points.leftEyeCenter, points.rightEyeCenter);
+    const faceOutlineWidth = this.safeDistance(points.leftFace, points.rightFace);
+    const foreheadWidth = this.safeDistance(points.leftForehead, points.rightForehead);
+    const noseBridgeWidth = this.safeDistance(points.noseLeft, points.noseRight);
     const faceWidth = faceOutlineWidth ?? cheekboneWidth ?? eyeOuterDistance ?? 0;
+    const faceHeight = this.safeDistance(points.foreheadCenter, points.chin)
+      ?? (this.safeDistance(points.eyesCenter, points.chin) ?? 0) / 0.55;
+    const noseBridgeToEyeLine = points.noseBridge && points.eyesCenter
+      ? Math.abs(points.noseBridge.y - points.eyesCenter.y) : 0;
 
-    // --- Vertical height ---------------------------------------------------
-    let faceHeight: number | undefined;
-    if (s.foreheadCenter && s.chin) {
-      faceHeight = distance3D(s.foreheadCenter, s.chin);
-    } else if (s.eyesCenter && s.chin) {
-      faceHeight = distance3D(s.eyesCenter, s.chin) / 0.55;
+    const widthHeightRatio = faceHeight > 0 ? faceWidth / faceHeight : 0;
+    const jawCheekRatio = cheekboneWidth && jawWidth !== undefined ? jawWidth / cheekboneWidth : 0;
+    const foreheadCheekRatio = cheekboneWidth && foreheadWidth !== undefined
+      ? foreheadWidth / cheekboneWidth : undefined;
+    const eyeLineTiltDeg = points.leftEyeOuter && points.rightEyeOuter
+      ? Math.atan2(
+          points.rightEyeOuter.y - points.leftEyeOuter.y,
+          points.rightEyeOuter.x - points.leftEyeOuter.x,
+        ) * (180 / Math.PI)
+      : undefined;
+    const symmetryOffset = points.noseBridge && points.leftFace && points.rightFace && faceWidth > 0
+      ? Math.abs(points.noseBridge.x - (points.leftFace.x + points.rightFace.x) / 2) / faceWidth
+      : undefined;
+    const faceSpanX = semantic.leftFace && semantic.rightFace
+      ? Math.abs(semantic.rightFace.x - semantic.leftFace.x) : undefined;
+    const faceSpanY = semantic.foreheadCenter && semantic.chin
+      ? Math.abs(semantic.chin.y - semantic.foreheadCenter.y) : undefined;
+
+    const geometryWarnings: FaceQualityWarning[] = [];
+    const hasRequiredPoints = REQUIRED_POINTS.every((key) => isFinitePoint2D(semantic[key]));
+    if (!hasRequiredPoints) geometryWarnings.push("MISSING_KEY_POINTS");
+    if (hasRequiredPoints && (faceWidth <= 0 || faceHeight <= 0 || (cheekboneWidth ?? 0) <= 0
+      || (eyeOuterDistance ?? 0) <= 0)) {
+      geometryWarnings.push("INVALID_LANDMARKS");
     }
 
-    // --- Nose bridge to eye line ------------------------------------------
-    let noseBridgeToEyeLine = 0;
-    if (s.noseBridge && s.eyesCenter) {
-      noseBridgeToEyeLine = Math.abs(s.noseBridge.y - s.eyesCenter.y);
-    }
-
-    // --- Ratios ------------------------------------------------------------
-    const widthHeightRatio =
-      faceHeight && faceHeight > 1e-6 ? faceWidth / faceHeight : 0;
-    const jawCheekRatio =
-      jawWidth !== undefined && cheekboneWidth && cheekboneWidth > 1e-6
-        ? jawWidth / cheekboneWidth
-        : 0;
-    const foreheadCheekRatio =
-      foreheadWidth !== undefined && cheekboneWidth && cheekboneWidth > 1e-6
-        ? foreheadWidth / cheekboneWidth
-        : undefined;
-
-    // --- Eye line tilt (degrees) ------------------------------------------
-    // Angle of the line connecting left/right eye outer corners relative to
-    // horizontal. Positive = right side higher. Used for photo quality check.
-    let eyeLineTiltDeg: number | undefined;
-    if (s.leftEyeOuter && s.rightEyeOuter) {
-      const dx = s.rightEyeOuter.x - s.leftEyeOuter.x;
-      const dy = s.rightEyeOuter.y - s.leftEyeOuter.y;
-      if (Math.abs(dx) > 1e-6) {
-        eyeLineTiltDeg = Math.atan2(dy, dx) * (180 / Math.PI);
-      }
-    }
-
-    // --- Symmetry offset ---------------------------------------------------
-    // Nose bridge deviation from face center (midpoint of leftFace/rightFace).
-    // 0 = perfectly symmetric, larger = more offset.
-    let symmetryOffset: number | undefined;
-    if (s.noseBridge && s.leftFace && s.rightFace && faceWidth > 1e-6) {
-      const faceCenterX = (s.leftFace.x + s.rightFace.x) / 2;
-      symmetryOffset = Math.abs(s.noseBridge.x - faceCenterX) / faceWidth;
-    }
-
-    // --- Face span (bounding box max dimension) ----------------------------
-    let faceSpan: number | undefined;
-    if (s.leftFace && s.rightFace && s.foreheadCenter && s.chin) {
-      const w = Math.abs(s.rightFace.x - s.leftFace.x);
-      const h = Math.abs(s.chin.y - s.foreheadCenter.y);
-      faceSpan = Math.max(w, h);
-    }
-
-    // --- Chin type classification (geometric heuristic, width/height aware) -
-    const chinType = this.classifyChin(
-      jawCheekRatio,
-      widthHeightRatio,
-      jawWidth,
-      cheekboneWidth,
-      s.chin,
-      s.leftJaw,
-      s.rightJaw,
-    );
-
-    // --- Measurement quality ----------------------------------------------
-    const measurementQuality = this.computeQuality(present, s);
-
-    // --- visutry-compatible 2D ratios -------------------------------------
-    // visutry uses 2D distances (Math.hypot(dx, dy) with no z-component).
-    // Compute these separately for the SDK's historical ratio contract.
-    const visutry = this.computeVisutryRatios(s);
-
-    return {
+    const metrics: FaceMetrics = {
       faceWidth,
-      faceHeight: faceHeight ?? 0,
+      faceHeight,
       cheekboneWidth: cheekboneWidth ?? 0,
       jawWidth: jawWidth ?? 0,
       foreheadWidth,
@@ -135,312 +111,136 @@ export class FaceMetricsCalculator {
       foreheadCheekRatio,
       eyeLineTiltDeg,
       symmetryOffset,
-      faceSpan,
-      chinType,
-      measurementQuality,
-      visutry,
+      faceSpanX,
+      faceSpanY,
+      faceSpan: faceSpanX !== undefined && faceSpanY !== undefined ? Math.max(faceSpanX, faceSpanY) : undefined,
+      chinType: this.classifyChin(jawCheekRatio, widthHeightRatio, points),
+      measurementQuality: this.computeQuality(semantic),
+      geometryWarnings,
     };
+
+    if (hasRequiredPoints && faceWidth > 0 && faceHeight > 0 && (cheekboneWidth ?? 0) > 0) {
+      metrics.visutry = this.ratiosFromMetrics(metrics);
+    }
+    if (Object.values(metrics).some((value) => typeof value === "number" && !Number.isFinite(value))) {
+      return this.emptyMetrics(["INVALID_LANDMARKS"]);
+    }
+    return this.withGeometryValidity(metrics);
   }
 
   /**
-   * Aggregate metrics across multiple frames (spec §12.3). Distances use the
-   * median; ratios are recomputed from medians to stay internally consistent;
-   * `measurementQuality` blends per-frame quality with cross-frame stability.
+   * Aggregate only complete, geometrically acceptable samples. A bad sample
+   * invalidates the batch instead of disappearing into a median or an average.
    */
   aggregate(frames: NormalizedFaceResult[]): FaceMetrics {
-    if (frames.length === 0) {
-      return this.emptyMetrics();
-    }
-    if (frames.length === 1) {
-      return this.compute(frames[0]);
-    }
-
-    const perFrame = frames.map((f) => this.compute(f));
-
-    // Single-pass extraction of all numeric metrics to avoid O(keys × N) iterations.
-    const numericKeys: (keyof FaceMetrics)[] = [
-      "faceWidth", "faceHeight", "cheekboneWidth", "jawWidth",
-      "eyeOuterDistance", "eyeInnerDistance", "eyeCenterDistance",
-      "noseBridgeToEyeLine", "widthHeightRatio", "jawCheekRatio",
-      "measurementQuality",
-    ];
-    const collected: Record<string, number[]> = {};
-    for (const key of numericKeys) collected[key] = [];
-
-    const foreheadWidthArr: number[] = [];
-    const faceOutlineWidthArr: number[] = [];
-    const noseBridgeWidthArr: number[] = [];
-    const eyeLineTiltArr: number[] = [];
-    const symmetryOffsetArr: number[] = [];
-    const faceSpanArr: number[] = [];
-
-    for (const m of perFrame) {
-      for (const key of numericKeys) {
-        const v = m[key] as number;
-        if (typeof v === "number" && !Number.isNaN(v)) collected[key].push(v);
-      }
-      if (typeof m.foreheadWidth === "number" && !Number.isNaN(m.foreheadWidth)) foreheadWidthArr.push(m.foreheadWidth);
-      if (typeof m.faceOutlineWidth === "number" && !Number.isNaN(m.faceOutlineWidth)) faceOutlineWidthArr.push(m.faceOutlineWidth);
-      if (typeof m.noseBridgeWidth === "number" && !Number.isNaN(m.noseBridgeWidth)) noseBridgeWidthArr.push(m.noseBridgeWidth);
-      if (typeof m.eyeLineTiltDeg === "number" && !Number.isNaN(m.eyeLineTiltDeg)) eyeLineTiltArr.push(m.eyeLineTiltDeg);
-      if (typeof m.symmetryOffset === "number" && !Number.isNaN(m.symmetryOffset)) symmetryOffsetArr.push(m.symmetryOffset);
-      if (typeof m.faceSpan === "number" && !Number.isNaN(m.faceSpan)) faceSpanArr.push(m.faceSpan);
+    if (frames.length === 0) return this.emptyMetrics(["MISSING_KEY_POINTS"]);
+    const perFrame = frames.map((face) => this.compute(face));
+    if (perFrame.length === 1) return perFrame[0];
+    if (perFrame.some((metrics) => !metrics.geometryValid)) {
+      return this.emptyMetrics([...new Set(perFrame.flatMap((metrics) => metrics.geometryWarnings ?? []))]);
     }
 
-    const pick = (key: string) => collected[key] ?? [];
-
-    const faceWidth = median(pick("faceWidth"));
-    const faceHeight = median(pick("faceHeight"));
-    const cheekboneWidth = median(pick("cheekboneWidth"));
-    const jawWidth = median(pick("jawWidth"));
-    const eyeOuterDistance = median(pick("eyeOuterDistance"));
-    const eyeInnerDistance = median(pick("eyeInnerDistance"));
-    const eyeCenterDistance = median(pick("eyeCenterDistance"));
-    const noseBridgeToEyeLine = median(pick("noseBridgeToEyeLine"));
-
-    // visutry additions — aggregate optional metrics when available
-    const foreheadWidth = foreheadWidthArr.length > 0 ? median(foreheadWidthArr) : undefined;
-    const faceOutlineWidth = faceOutlineWidthArr.length > 0 ? median(faceOutlineWidthArr) : undefined;
-    const noseBridgeWidth = noseBridgeWidthArr.length > 0 ? median(noseBridgeWidthArr) : undefined;
-    const eyeLineTiltDeg = eyeLineTiltArr.length > 0 ? median(eyeLineTiltArr) : undefined;
-    const symmetryOffset = symmetryOffsetArr.length > 0 ? median(symmetryOffsetArr) : undefined;
-    const faceSpan = faceSpanArr.length > 0 ? median(faceSpanArr) : undefined;
-
-    const widthHeightRatio = faceHeight > 1e-6 ? faceWidth / faceHeight : 0;
-    const jawCheekRatio = cheekboneWidth > 1e-6 ? jawWidth / cheekboneWidth : 0;
-    const foreheadCheekRatio =
-      foreheadWidth !== undefined && cheekboneWidth > 1e-6
-        ? foreheadWidth / cheekboneWidth
-        : undefined;
-
-    const qualities = pick("measurementQuality");
-    const avgQuality = trimmedMean(qualities, 0.2);
-
-    // Stability bonus: low variance across frames increases confidence.
-    const wds = pick("faceWidth");
-    const stability = this.stabilityFactor(wds);
-    const measurementQuality = clamp01(avgQuality * 0.6 + stability * 0.4);
-
-    // Chin type: majority vote across frames.
-    const chinVotes = perFrame.map((m) => m.chinType);
-    const chinType = this.majorityVote(chinVotes);
-
-    // Aggregate visutry-compatible ratios (median of per-frame values)
-    const visutryArr = perFrame.map((m) => m.visutry).filter((v): v is NonNullable<FaceMetrics["visutry"]> => v !== undefined);
-    const visutry = visutryArr.length > 0
-      ? {
-          faceAspectRatio: median(visutryArr.map((v) => v.faceAspectRatio)),
-          cheekToFaceWidth: median(visutryArr.map((v) => v.cheekToFaceWidth)),
-          jawToCheekWidth: median(visutryArr.map((v) => v.jawToCheekWidth)),
-          foreheadToCheekWidth: median(visutryArr.map((v) => v.foreheadToCheekWidth)),
-          eyeLineTiltDeg: median(visutryArr.map((v) => v.eyeLineTiltDeg)),
-          symmetryOffset: median(visutryArr.map((v) => v.symmetryOffset)),
-          noseBridgeToFaceWidth: median(visutryArr.map((v) => v.noseBridgeToFaceWidth)),
-        }
-      : undefined;
-
-    return {
+    const pick = (key: keyof FaceMetrics): number[] => perFrame
+      .map((metrics) => metrics[key])
+      .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+    const requiredMedian = (key: keyof FaceMetrics): number => median(pick(key));
+    const optionalMedian = (key: keyof FaceMetrics): number | undefined => {
+      const values = pick(key);
+      return values.length ? median(values) : undefined;
+    };
+    const faceWidth = requiredMedian("faceWidth");
+    const faceHeight = requiredMedian("faceHeight");
+    const cheekboneWidth = requiredMedian("cheekboneWidth");
+    const jawWidth = requiredMedian("jawWidth");
+    const foreheadWidth = optionalMedian("foreheadWidth");
+    const faceSpanX = optionalMedian("faceSpanX");
+    const faceSpanY = optionalMedian("faceSpanY");
+    const metrics: FaceMetrics = {
       faceWidth,
       faceHeight,
       cheekboneWidth,
       jawWidth,
       foreheadWidth,
-      faceOutlineWidth,
-      eyeOuterDistance,
-      eyeInnerDistance,
-      eyeCenterDistance,
-      noseBridgeToEyeLine,
-      noseBridgeWidth,
-      widthHeightRatio,
-      jawCheekRatio,
-      foreheadCheekRatio,
-      eyeLineTiltDeg,
-      symmetryOffset,
-      faceSpan,
-      chinType,
-      measurementQuality,
-      visutry,
+      faceOutlineWidth: optionalMedian("faceOutlineWidth"),
+      eyeOuterDistance: requiredMedian("eyeOuterDistance"),
+      eyeInnerDistance: requiredMedian("eyeInnerDistance"),
+      eyeCenterDistance: requiredMedian("eyeCenterDistance"),
+      noseBridgeToEyeLine: requiredMedian("noseBridgeToEyeLine"),
+      noseBridgeWidth: optionalMedian("noseBridgeWidth"),
+      widthHeightRatio: faceWidth / faceHeight,
+      jawCheekRatio: jawWidth / cheekboneWidth,
+      foreheadCheekRatio: foreheadWidth === undefined ? undefined : foreheadWidth / cheekboneWidth,
+      eyeLineTiltDeg: optionalMedian("eyeLineTiltDeg"),
+      symmetryOffset: optionalMedian("symmetryOffset"),
+      faceSpanX,
+      faceSpanY,
+      faceSpan: faceSpanX !== undefined && faceSpanY !== undefined ? Math.max(faceSpanX, faceSpanY) : undefined,
+      chinType: this.majorityVote(perFrame.map((item) => item.chinType)),
+      measurementQuality: clamp01(
+        trimmedMean(pick("measurementQuality"), 0.2) * 0.6 + this.stabilityFactor(pick("faceWidth")) * 0.4,
+      ),
+      geometryWarnings: [],
     };
+    metrics.visutry = this.ratiosFromMetrics(metrics);
+    return this.withGeometryValidity(metrics);
   }
 
-  // -----------------------------------------------------------------------
-  // Helpers
-  // -----------------------------------------------------------------------
-
-  private safeDistance(a?: { x: number; y: number; z?: number }, b?: { x: number; y: number; z?: number }): number | undefined {
-    if (!a || !b) return undefined;
-    return distance3D(
-      { x: a.x, y: a.y, z: a.z ?? 0 },
-      { x: b.x, y: b.y, z: b.z ?? 0 },
-    );
-  }
-
-  /**
-   * 2D distance (x, y only — no z). Used for visutry-compatible ratios.
-   */
-  private safeDistance2D(a?: { x: number; y: number }, b?: { x: number; y: number }): number | undefined {
-    if (!a || !b) return undefined;
-    return distance2D({ x: a.x, y: a.y }, { x: b.x, y: b.y });
-  }
-
-  /**
-   * Compute visutry-compatible ratios using 2D distances.
-   * These fields inherit the VisuTry geometry vocabulary. The implementation
-   * uses normalized coordinates; it does not apply source-image aspect scaling:
-   *   - faceAspectRatio = faceHeight / faceWidth (H/W, 2D)
-   *   - cheekToFaceWidth = cheekWidth / faceWidth
-   *   - jawToCheekWidth = jawWidth / cheekWidth
-   *   - foreheadToCheekWidth = foreheadWidth / cheekWidth
-   *   - eyeLineTiltDeg = atan2(dy, dx) * 180/PI
-   *   - symmetryOffset = |noseBridge.x - faceCenterX| / faceWidth
-   *   - noseBridgeToFaceWidth = noseBridgeWidth / faceWidth
-   */
-  private computeVisutryRatios(s: FaceSemanticPoints): NonNullable<FaceMetrics["visutry"]> | undefined {
-    const required = [s.foreheadCenter, s.chin, s.leftFace, s.rightFace,
-      s.leftCheek, s.rightCheek, s.leftJaw, s.rightJaw,
-      s.leftForehead, s.rightForehead, s.leftEyeOuter, s.rightEyeOuter,
-      s.noseLeft, s.noseRight, s.noseBridge];
-    if (required.some((p) => !p)) return undefined;
-
-    // Distances use normalized coordinates directly. Different horizontal and
-    // vertical image scales do not generally cancel in these ratios; compare
-    // aspect-aware consumer calculations before claiming numerical parity.
-    const faceHeight = this.safeDistance2D(s.foreheadCenter!, s.chin!)!;
-    const faceWidth = this.safeDistance2D(s.leftFace!, s.rightFace)!;
-    const cheekWidth = this.safeDistance2D(s.leftCheek!, s.rightCheek)!;
-    const jawWidth = this.safeDistance2D(s.leftJaw!, s.rightJaw)!;
-    const foreheadWidth = this.safeDistance2D(s.leftForehead!, s.rightForehead)!;
-    const noseBridgeWidth = this.safeDistance2D(s.noseLeft!, s.noseRight)!;
-
-    if (faceHeight <= 0 || faceWidth <= 0 || cheekWidth <= 0) return undefined;
-
-    // Eye line tilt — visutry uses atan2(dy*H, dx*W). With normalized coords
-    // (W=H=1), this is atan2(dy, dx).
-    const dx = s.rightEyeOuter!.x - s.leftEyeOuter!.x;
-    const dy = s.rightEyeOuter!.y - s.leftEyeOuter!.y;
-    const eyeLineTiltDeg = Math.atan2(dy, dx) * (180 / Math.PI);
-
-    // Symmetry offset
-    const faceCenterX = (s.leftFace!.x + s.rightFace!.x) / 2;
-    const symmetryOffset = Math.abs(s.noseBridge!.x - faceCenterX) / faceWidth;
-
+  private ratiosFromMetrics(metrics: FaceMetrics): NonNullable<FaceMetrics["visutry"]> {
     return {
-      faceAspectRatio: faceHeight / faceWidth,
-      cheekToFaceWidth: cheekWidth / faceWidth,
-      jawToCheekWidth: jawWidth / cheekWidth,
-      foreheadToCheekWidth: foreheadWidth / cheekWidth,
-      eyeLineTiltDeg,
-      symmetryOffset,
-      noseBridgeToFaceWidth: noseBridgeWidth / faceWidth,
+      faceAspectRatio: round(metrics.faceHeight / metrics.faceWidth),
+      cheekToFaceWidth: round(metrics.cheekboneWidth / metrics.faceWidth),
+      jawToCheekWidth: round(metrics.jawWidth / metrics.cheekboneWidth),
+      foreheadToCheekWidth: round((metrics.foreheadWidth ?? 0) / metrics.cheekboneWidth),
+      eyeLineTiltDeg: round(metrics.eyeLineTiltDeg ?? 0, 1),
+      symmetryOffset: round(metrics.symmetryOffset ?? 0),
+      noseBridgeToFaceWidth: round((metrics.noseBridgeWidth ?? 0) / metrics.faceWidth),
     };
   }
 
-  private countKeyPoints(s: FaceSemanticPoints): number {
-    const keys: (keyof FaceSemanticPoints)[] = [
-      "leftEyeOuter",
-      "leftEyeInner",
-      "rightEyeInner",
-      "rightEyeOuter",
-      "leftEyeCenter",
-      "rightEyeCenter",
-      "eyesCenter",
-      "noseBridge",
-      "noseTip",
-      "chin",
-      "leftCheek",
-      "rightCheek",
-      "leftJaw",
-      "rightJaw",
-      "leftBrowCenter",
-      "rightBrowCenter",
-      "foreheadCenter",
-      // visutry additions
-      "leftFace",
-      "rightFace",
-      "leftForehead",
-      "rightForehead",
-      "noseLeft",
-      "noseRight",
-    ];
-    let count = 0;
-    for (const k of keys) if (s[k]) count++;
-    return count;
+  private withGeometryValidity(metrics: FaceMetrics): FaceMetrics {
+    const geometryWarnings = getFaceGeometryWarnings(metrics);
+    return { ...metrics, geometryValid: geometryWarnings.length === 0, geometryWarnings };
   }
 
-  private computeQuality(present: number, s: FaceSemanticPoints): number {
-    // Base quality from coverage of 23 key points.
-    const coverage = clamp01(present / FaceMetricsCalculator.KEY_POINT_COUNT);
+  private safeDistance(a?: Point3D, b?: Point3D): number | undefined {
+    return isFinitePoint2D(a) && isFinitePoint2D(b) ? distance2D(a, b) : undefined;
+  }
 
-    // Critical points weight: eyes, noseBridge, chin, cheeks, jaw are essential.
+  private computeQuality(points: FaceSemanticPoints): number {
+    const coverage = clamp01(Object.values(points).filter(isFinitePoint2D).length / 23);
     const critical: (keyof FaceSemanticPoints)[] = [
-      "leftEyeCenter",
-      "rightEyeCenter",
-      "eyesCenter",
-      "noseBridge",
-      "chin",
-      "leftCheek",
-      "rightCheek",
-      "leftJaw",
-      "rightJaw",
+      "leftEyeCenter", "rightEyeCenter", "eyesCenter", "noseBridge", "chin",
+      "leftCheek", "rightCheek", "leftJaw", "rightJaw",
     ];
-    const criticalPresent = critical.filter((k) => s[k]).length;
-    const criticalRatio = criticalPresent / critical.length;
-
-    // Blend: critical points matter more than peripheral coverage.
+    const criticalRatio = critical.filter((key) => isFinitePoint2D(points[key])).length / critical.length;
     return clamp01(coverage * 0.35 + criticalRatio * 0.65);
   }
 
-  private classifyChin(
-    jawCheekRatio: number,
-    widthHeightRatio: number,
-    jawWidth?: number,
-    cheekboneWidth?: number,
-    chin?: { x: number; y: number; z?: number },
-    leftJaw?: { x: number; y: number; z?: number },
-    rightJaw?: { x: number; y: number; z?: number },
-  ): FaceMetrics["chinType"] {
-    if (jawWidth === undefined || cheekboneWidth === undefined || !chin || !leftJaw || !rightJaw) {
-      return "unknown";
-    }
-    // A pointed chin tapers strongly: jaw much narrower than cheekbone.
-    if (jawCheekRatio < 0.72) {
-      return "pointed";
-    }
-    // A broad jaw (jaw ≈ cheekbone) is square when proportions are medium and
-    // rounded when the face is nearly as wide as it is tall (a round face).
-    if (jawCheekRatio >= 0.86) {
-      return widthHeightRatio >= 0.9 ? "rounded" : "square";
-    }
-    // Intermediate taper => rounded.
+  private classifyChin(jawCheekRatio: number, widthHeightRatio: number, points: FaceSemanticPoints): FaceMetrics["chinType"] {
+    if (!points.chin || !points.leftJaw || !points.rightJaw || !points.leftCheek || !points.rightCheek) return "unknown";
+    if (jawCheekRatio < 0.72) return "pointed";
+    if (jawCheekRatio >= 0.86) return widthHeightRatio >= 0.9 ? "rounded" : "square";
     return "rounded";
   }
 
   private stabilityFactor(values: number[]): number {
     if (values.length < 2) return 1;
-    const m = values.reduce((a, b) => a + b, 0) / values.length;
-    if (m < 1e-6) return 0.5;
-    const variance = values.reduce((a, b) => a + (b - m) * (b - m), 0) / values.length;
-    const cv = Math.sqrt(variance) / m; // coefficient of variation
-    // cv near 0 => stable (1); cv >= 0.15 => unstable (0).
-    return clamp01(1 - cv / 0.15);
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    if (mean < 1e-6) return 0.5;
+    const variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length;
+    return clamp01(1 - Math.sqrt(variance) / mean / 0.15);
   }
 
   private majorityVote(values: FaceMetrics["chinType"][]): FaceMetrics["chinType"] {
     const counts = new Map<FaceMetrics["chinType"], number>();
-    for (const v of values) counts.set(v, (counts.get(v) ?? 0) + 1);
-    let best: FaceMetrics["chinType"] = "unknown";
-    let bestCount = 0;
-    for (const [k, c] of counts) {
-      if (c > bestCount) {
-        best = k;
-        bestCount = c;
-      }
-    }
-    return best;
+    for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1);
+    return [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "unknown";
   }
 
-  private emptyMetrics(): FaceMetrics {
+  private emptyMetrics(warnings: FaceQualityWarning[]): FaceMetrics {
     return {
+      geometryValid: false,
+      geometryWarnings: warnings,
       faceWidth: 0,
       faceHeight: 0,
       cheekboneWidth: 0,
@@ -453,22 +253,6 @@ export class FaceMetricsCalculator {
       jawCheekRatio: 0,
       chinType: "unknown",
       measurementQuality: 0,
-      foreheadWidth: 0,
-      faceOutlineWidth: 0,
-      noseBridgeWidth: 0,
-      foreheadCheekRatio: 0,
-      eyeLineTiltDeg: 0,
-      symmetryOffset: 0,
-      faceSpan: 0,
-      visutry: {
-        faceAspectRatio: 0,
-        cheekToFaceWidth: 0,
-        jawToCheekWidth: 0,
-        foreheadToCheekWidth: 0,
-        eyeLineTiltDeg: 0,
-        symmetryOffset: 0,
-        noseBridgeToFaceWidth: 0,
-      },
     };
   }
 }

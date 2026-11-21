@@ -72,7 +72,7 @@ jobs:
           test -s "$video_path"
           echo "VISUTRY_FAKE_VIDEO=$video_path" >> "$GITHUB_ENV"
 
-      - name: Test reference demo with real MediaPipe and renderer
+      - name: Test real photo analysis and camera renderer
         run: pnpm demo:test
 
       - name: Upload browser test evidence

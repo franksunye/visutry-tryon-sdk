@@ -1,7 +1,7 @@
 {
   "name": "@visutry/recommender",
-  "version": "0.2.3",
-  "description": "Glasses recommendation engine for VisuTry SDK: face-shape x frame matching, millimeter-level size recommendation, preference scoring.",
+  "version": "0.3.0",
+  "description": "Reusable glasses-ranking rules for VisuTry SDK: face shape, optional host-supplied physical measurements, and user preferences.",
   "license": "MIT",
   "keywords": [
     "glasses",

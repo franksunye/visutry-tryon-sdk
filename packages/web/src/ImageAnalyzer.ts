@@ -12,7 +12,6 @@ import type {
 } from "@visutry/tryon-core";
 import {
   FaceShapeScorer,
-  QualityGate,
   createSDKError,
 } from "@visutry/tryon-core";
 import type { MediaPipeTrackerOptions } from "./tracker/MediaPipeFaceTracker.js";
@@ -24,6 +23,8 @@ import { MediaPipeFaceTracker } from "./tracker/MediaPipeFaceTracker.js";
  * landmark overlay rendering) in a single call.
  */
 export interface ImageAnalysisResult {
+  /** Rejected observations retain geometry/warnings for a retake UI, never a valid shape. */
+  status: "accepted" | "rejected";
   /** Face shape classification, confidence, metrics and candidates. */
   result: FaceShapeResult;
   /** Raw face landmark data — pass to `LandmarkOverlay.renderFromFace()`. */
@@ -88,30 +89,36 @@ export function createVisuTryImageAnalyzer(
 ): ImageAnalyzer {
   const tracker = new MediaPipeFaceTracker(options ?? {}, { mode: "balanced" });
   const scorer = new FaceShapeScorer();
-  const qualityGate = new QualityGate();
   let destroyed = false;
+  let analyzing = false;
   let lastFace: NormalizedFaceResult | null = null;
 
   /** Core detection + scoring logic shared by both analyze methods. */
-  async function detectAndScore(image: unknown): Promise<{
-    result: FaceShapeResult;
-    face: NormalizedFaceResult;
-  }> {
+  async function detectAndScore(image: unknown): Promise<ImageAnalysisResult> {
     if (destroyed) {
       throw createSDKError("UNKNOWN", "Image analyzer has been destroyed");
     }
-    const face = await tracker.detectImage(image);
-    if (!face) {
-      throw createSDKError("UNKNOWN", "No face detected in the provided image");
+    if (analyzing) {
+      throw createSDKError("ANALYSIS_IN_PROGRESS", "Image analysis is already in progress");
     }
-    lastFace = face;
-    const gate = qualityGate.evaluate({ face, mode: "analysis" });
-    const result = scorer.scoreFrames([face]);
-    if (gate.warnings.length > 0) {
-      const merged = [...new Set([...result.warnings, ...gate.warnings])];
-      return { result: { ...result, warnings: merged }, face };
+    analyzing = true;
+    lastFace = null;
+    try {
+      const face = await tracker.detectImage(image);
+      if (destroyed) {
+        throw createSDKError("UNKNOWN", "Image analyzer has been destroyed");
+      }
+      if (!face) {
+        throw createSDKError("FACE_NOT_DETECTED", "No face detected in the provided image");
+      }
+      // The shared scorer owns both validity and classification. A warning-only
+      // wrapper used to leave a confident shape on a rejected observation.
+      const result = scorer.score(face);
+      lastFace = face;
+      return { status: result.primary === "unknown" ? "rejected" : "accepted", result, face };
+    } finally {
+      analyzing = false;
     }
-    return { result, face };
   }
 
   return {
@@ -129,7 +136,9 @@ export function createVisuTryImageAnalyzer(
     },
 
     destroy(): void {
+      if (destroyed) return;
       destroyed = true;
+      lastFace = null;
       tracker.destroy();
     },
   };

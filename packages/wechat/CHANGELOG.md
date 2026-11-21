@@ -1,5 +1,13 @@
 # @visutry/tryon-wechat
 
+## 0.3.0
+
+### Minor Changes
+
+- Carry observed input dimensions and face counts into the shared 0.3.0 contract.
+- Update the core dependency and platform-neutral snapshot types.
+- The adapter remains experimental. This release does not validate VK topology, native hardware or the incomplete rendering loop.
+
 ## 0.2.3
 
 ### Patch Changes

@@ -1,19 +1,33 @@
 import type {
-  FaceMetrics,
   FaceShape,
+  FaceShapeResult,
   GlassesItem,
   GlassesShape,
   RecommendationInput,
   RecommendedGlasses,
   UserPreferences,
 } from "@visutry/tryon-core";
-import {
-  FACE_SHAPE_FRAME_MATCH,
-  MAX_RAW_SCORE,
-  SCORE_WEIGHTS,
-} from "./constants.js";
-import { recommendSize } from "./sizing.js";
+import { FACE_SHAPE_FRAME_MATCH, MAX_RAW_SCORE, SCORE_WEIGHTS } from "./constants.js";
+import { isPositiveFinite, recommendSize } from "./sizing.js";
 import type { SizeRecommendation } from "./sizing.js";
+
+/** Use the core's validity contract; confidence is not an accuracy threshold. */
+function usableFaceShape(result?: FaceShapeResult): FaceShape {
+  if (
+    !result ||
+    result.metrics?.geometryValid !== true ||
+    !Array.isArray(result.warnings) ||
+    result.warnings.length > 0 ||
+    (result.metrics.geometryWarnings?.length ?? 0) > 0 ||
+    !Number.isFinite(result.confidence) ||
+    result.confidence <= 0 ||
+    result.confidence > 1 ||
+    !Object.prototype.hasOwnProperty.call(FACE_SHAPE_FRAME_MATCH, result.primary)
+  ) {
+    return "unknown";
+  }
+  return result.primary;
+}
 
 /**
  * Shape-match contribution (spec §16.5):
@@ -22,7 +36,7 @@ import type { SizeRecommendation } from "./sizing.js";
  *  - face shape known + frame not in the table    -> 0
  */
 function faceShapeMatchScore(primary: FaceShape, shape: GlassesShape): number {
-  if (primary === "unknown") return 20;
+  if (primary === "unknown") return SCORE_WEIGHTS.shape / 2;
   const recommended = FACE_SHAPE_FRAME_MATCH[primary] ?? [];
   return recommended.includes(shape) ? SCORE_WEIGHTS.shape : 0;
 }
@@ -39,20 +53,27 @@ interface ComponentResult {
  *  - Frame width: perfect <=10mm off, close <=20mm off, poor otherwise.
  *  - Lens width:  perfect within the tier range, close within +/-3mm, poor otherwise.
  *
- * Items without any dimensions get a neutral middle score (15) plus a caution,
- * so missing metadata never over-penalises a frame we cannot measure.
- * `eyeCenterDistance` is used as a supplementary (non-scored) caution signal.
+ * A missing or invalid catalog dimension receives a neutral half of its
+ * component weight. The input measurements were validated by recommendSize;
+ * they are host assertions, not SDK-verified physical fit.
  */
-function scoreSize(item: GlassesItem, size: SizeRecommendation): ComponentResult {
+function scoreSize(
+  item: GlassesItem,
+  size: Extract<SizeRecommendation, { status: "available" }>,
+): ComponentResult {
   const reasons: string[] = [];
   const cautions: string[] = [];
   const dims = item.dimensions;
+  const frameWidthMm = dims?.frameWidthMm;
+  const lensWidthMm = dims?.lensWidthMm;
+  const hasFrameWidth = isPositiveFinite(frameWidthMm);
+  const hasLensWidth = isPositiveFinite(lensWidthMm);
 
-  if (!dims || (dims.frameWidthMm == null && dims.lensWidthMm == null)) {
+  if (!hasFrameWidth && !hasLensWidth) {
     return {
-      score: 15,
+      score: SCORE_WEIGHTS.size / 2,
       reasons,
-      cautions: ["Glasses dimensions not available; size fit cannot be verified."],
+      cautions: ["Valid glasses dimensions unavailable; size rules use a neutral weight."],
     };
   }
 
@@ -60,61 +81,66 @@ function scoreSize(item: GlassesItem, size: SizeRecommendation): ComponentResult
   const faceWidthRounded = Math.round(size.faceWidthMm);
 
   // --- Frame width fit (max 15) ---
-  if (dims.frameWidthMm != null) {
-    const diff = Math.abs(dims.frameWidthMm - size.idealFrameWidthMm);
+  if (hasFrameWidth) {
+    const diff = Math.abs(frameWidthMm - size.idealFrameWidthMm);
     if (diff <= 10) {
       score += 15;
       reasons.push(
-        `Frame width ${dims.frameWidthMm}mm matches face width ~${faceWidthRounded}mm.`,
+        `Frame width ${frameWidthMm}mm is within the 10mm rule tolerance of the supplied face width (${faceWidthRounded}mm).`,
       );
     } else if (diff <= 20) {
       score += 8;
       cautions.push(
-        `Frame width ${dims.frameWidthMm}mm is ~${Math.round(diff)}mm off your face width (~${faceWidthRounded}mm).`,
+        `Frame width ${frameWidthMm}mm is ~${Math.round(diff)}mm away from the supplied face width (${faceWidthRounded}mm).`,
       );
     } else {
       cautions.push(
-        `Frame width ${dims.frameWidthMm}mm is a poor match for face width ~${faceWidthRounded}mm (off by ~${Math.round(diff)}mm).`,
+        `Frame width ${frameWidthMm}mm is outside the 20mm rule tolerance for the supplied face width (${faceWidthRounded}mm).`,
       );
     }
+  } else {
+    score += SCORE_WEIGHTS.size / 4;
+    cautions.push("Valid frame width unavailable; frame-width rules use a neutral weight.");
   }
 
   // --- Lens width fit (max 15) ---
-  if (dims.lensWidthMm != null) {
+  if (hasLensWidth) {
     const [lo, hi] = size.lensWidthRange;
-    if (dims.lensWidthMm >= lo && dims.lensWidthMm <= hi) {
+    if (lensWidthMm >= lo && lensWidthMm <= hi) {
       score += 15;
       reasons.push(
-        `Lens width ${dims.lensWidthMm}mm is within the recommended ${lo}-${hi}mm range for a ${size.tier} face.`,
+        `Lens width ${lensWidthMm}mm is within the rule's ${lo}-${hi}mm range for the ${size.tier} face-width tier.`,
       );
     } else {
-      const dist =
-        dims.lensWidthMm < lo ? lo - dims.lensWidthMm : dims.lensWidthMm - hi;
+      const dist = lensWidthMm < lo ? lo - lensWidthMm : lensWidthMm - hi;
       if (dist <= 3) {
         score += 8;
         cautions.push(
-          `Lens width ${dims.lensWidthMm}mm is slightly outside the recommended ${lo}-${hi}mm range.`,
+          `Lens width ${lensWidthMm}mm is slightly outside the rule's ${lo}-${hi}mm range.`,
         );
-      } else if (dims.lensWidthMm < lo) {
+      } else if (lensWidthMm < lo) {
         cautions.push(
-          `Lens width ${dims.lensWidthMm}mm is smaller than the recommended ${lo}-${hi}mm range for a ${size.tier} face.`,
+          `Lens width ${lensWidthMm}mm is below the rule's ${lo}-${hi}mm range for the ${size.tier} face-width tier.`,
         );
       } else {
         cautions.push(
-          `Lens width ${dims.lensWidthMm}mm is larger than the recommended ${lo}-${hi}mm range for a ${size.tier} face.`,
+          `Lens width ${lensWidthMm}mm is above the rule's ${lo}-${hi}mm range for the ${size.tier} face-width tier.`,
         );
       }
     }
+  } else {
+    score += SCORE_WEIGHTS.size / 4;
+    cautions.push("Valid lens width unavailable; lens-width rules use a neutral weight.");
   }
 
   // --- Supplementary caution from eye-center distance (not scored) ---
   if (
-    dims.lensWidthMm != null &&
-    size.eyeCenterDistanceMm > 0 &&
-    dims.lensWidthMm > size.eyeCenterDistanceMm
+    hasLensWidth &&
+    size.eyeCenterDistanceMm !== undefined &&
+    lensWidthMm > size.eyeCenterDistanceMm
   ) {
     cautions.push(
-      `Lens width ${dims.lensWidthMm}mm exceeds the estimated inter-eye distance (~${Math.round(size.eyeCenterDistanceMm)}mm).`,
+      `Lens width ${lensWidthMm}mm exceeds the supplied eye-center distance (${Math.round(size.eyeCenterDistanceMm)}mm).`,
     );
   }
 
@@ -122,18 +148,13 @@ function scoreSize(item: GlassesItem, size: SizeRecommendation): ComponentResult
 }
 
 /** Color / material preference contribution (max 10): 5 material + 5 color. */
-function scoreColorMaterial(
-  item: GlassesItem,
-  prefs?: UserPreferences,
-): ComponentResult {
+function scoreColorMaterial(item: GlassesItem, prefs?: UserPreferences): ComponentResult {
   const reasons: string[] = [];
   let score = 0;
 
   if (prefs?.preferredMaterials?.length && item.material) {
     const mat = item.material;
-    if (
-      prefs.preferredMaterials.some((m) => m.toLowerCase() === mat.toLowerCase())
-    ) {
+    if (prefs.preferredMaterials.some((m) => m.toLowerCase() === mat.toLowerCase())) {
       score += 5;
       reasons.push(`Made of preferred material "${mat}".`);
     }
@@ -170,10 +191,10 @@ function roundScore(v: number): number {
 /**
  * Glasses recommendation engine (spec §16).
  *
- * Scores every inventory item against the detected face shape, the estimated
- * face size and the user preferences, then returns the items sorted by score
- * (descending). Each result carries human-readable `reasons` (why it fits) and
- * optional `cautions` (e.g. size mismatch, shape not recommended).
+ * Ranks inventory using an optional valid face-shape result, explicit physical
+ * measurements and user preferences. Missing/rejected face analysis and absent
+ * physical measurements contribute neutral weights, with an explanation.
+ * Scores are rule rankings, not probabilities or verified physical fit.
  *
  * Scoring (raw, 0..100, then normalised to [0,1]):
  *  - shape match         : 40 (match) / 20 (unknown face) / 0 (no match)
@@ -188,12 +209,11 @@ function roundScore(v: number): number {
  */
 export class Recommender {
   recommend(input: RecommendationInput): RecommendedGlasses[] {
-    const { faceShape, faceMetrics, preferences, inventory } = input;
+    const { faceShape, measurements, preferences, inventory } = input;
     if (!inventory || inventory.length === 0) return [];
 
-    const primary: FaceShape = faceShape?.primary ?? "unknown";
-    const metrics: FaceMetrics | undefined = faceMetrics ?? faceShape?.metrics;
-    const size: SizeRecommendation | null = metrics ? recommendSize(metrics) : null;
+    const primary = usableFaceShape(faceShape);
+    const size = recommendSize(measurements);
     const maxPrice = preferences?.maxPrice;
 
     const results: RecommendedGlasses[] = [];
@@ -221,25 +241,33 @@ export class Recommender {
       raw += shapeScore;
 
       if (primary === "unknown") {
-        reasons.push("Face shape is unknown; frame scored with a neutral medium weight.");
+        reasons.push("Ranked without face-shape personalization; a neutral shape weight is used.");
+        cautions.push(
+          "Face analysis is missing, unknown, or rejected; face-shape rules were not applied.",
+        );
       } else if (baseShape === SCORE_WEIGHTS.shape) {
-        reasons.push(`Frame shape "${item.shapeCategory}" complements a ${primary} face.`);
+        reasons.push(
+          `Frame shape "${item.shapeCategory}" matches the heuristic rule table for a ${primary} face.`,
+        );
       } else if (baseShape === 0) {
         cautions.push(
-          `Frame shape "${item.shapeCategory}" is not typically recommended for a ${primary} face.`,
+          `Frame shape "${item.shapeCategory}" is not selected by the heuristic rule table for a ${primary} face.`,
         );
       }
 
       // --- Size (max 30) ---
-      if (size) {
+      if (size.status === "available") {
         const sizeRes = scoreSize(item, size);
         raw += sizeRes.score;
         reasons.push(...sizeRes.reasons);
         cautions.push(...sizeRes.cautions);
       } else {
-        // No face metrics at all: award a neutral middle score and warn.
-        raw += 15;
-        cautions.push("Face metrics unavailable; size fit cannot be verified.");
+        raw += SCORE_WEIGHTS.size / 2;
+        cautions.push(
+          size.reason === "invalid-measurements"
+            ? "Physical measurements are invalid; size is unavailable and a neutral size weight is used."
+            : "Physical measurements not supplied; size is unavailable and a neutral size weight is used.",
+        );
       }
 
       // --- Brand (max 10) ---
@@ -264,15 +292,23 @@ export class Recommender {
         raw += SCORE_WEIGHTS.price;
         if (maxPrice != null) {
           reasons.push(`Priced within your budget (<= ${maxPrice}).`);
+        } else {
+          reasons.push("Price metadata is available; no budget limit was supplied.");
         }
       } else {
         raw += SCORE_WEIGHTS.price * 0.5;
+        reasons.push("Price metadata is unavailable; the price component uses a neutral weight.");
+        if (maxPrice != null) {
+          cautions.push("The item's price is unknown; it cannot be verified against your budget.");
+        }
       }
 
       const score = clamp01(raw / MAX_RAW_SCORE);
       results.push({
         item,
         score: roundScore(score),
+        faceShapeApplied: primary !== "unknown",
+        size: { ...size },
         reasons,
         cautions: cautions.length > 0 ? cautions : undefined,
       });

@@ -12,5 +12,5 @@ export const MAX_TILT_DEG = 15;
 /** Maximum acceptable nose-bridge lateral offset (normalized) before rejection. */
 export const MAX_SYMMETRY_OFFSET = 0.14;
 
-/** Minimum face span (normalized bbox max dimension) before rejection. */
+/** Minimum extent on each source-image axis (x/W and y/H) before rejection. */
 export const MIN_FACE_SPAN = 0.16;

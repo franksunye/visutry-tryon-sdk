@@ -32,6 +32,11 @@ Documentation completion does not change runtime capability or complete the stag
 - **Owner:** SDK and main-site maintainers
 - **Dependency:** The architecture and integration baseline in stage 1.
 
+The 0.3.0 implementation and local compatibility evidence are recorded in
+[integration status](integration-status.md#030-implementation-and-migration-gate).
+Package publication, the pinned application dependency and deployed acceptance
+must still be recorded before this stage is complete.
+
 1. Inventory the two classifiers and warning/geometry definitions at exact revisions.
 2. Build a small, representative parity corpus, including boundary and invalid-input cases.
 3. Decide each observed mismatch deliberately; do not assume either implementation is correct
