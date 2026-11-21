@@ -51,7 +51,7 @@ importers:
   examples/web-demo:
     dependencies:
       '@mediapipe/tasks-vision':
-        specifier: ^0.10.18
+        specifier: 0.10.35
         version: 0.10.35
       '@visutry/demo-assets':
         specifier: workspace:*
@@ -72,6 +72,9 @@ importers:
       '@playwright/test':
         specifier: ^1.40.0
         version: 1.61.1
+      '@types/three':
+        specifier: ^0.170.0
+        version: 0.170.0
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
@@ -96,7 +99,7 @@ importers:
         version: link:../core
     devDependencies:
       '@mediapipe/tasks-vision':
-        specifier: ^0.10.18
+        specifier: 0.10.35
         version: 0.10.35
       '@types/three':
         specifier: ^0.170.0

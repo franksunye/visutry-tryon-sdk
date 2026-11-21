@@ -77,7 +77,7 @@
     "@visutry/tryon-core": "workspace:*"
   },
   "devDependencies": {
-    "@mediapipe/tasks-vision": "^0.10.18",
+    "@mediapipe/tasks-vision": "0.10.35",
     "@types/three": "^0.170.0",
     "three": "^0.170.0"
   }

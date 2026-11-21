@@ -39,14 +39,14 @@ vi.mock("three", () => ({
 vi.mock("three/examples/jsm/loaders/GLTFLoader.js", () => ({
   GLTFLoader: vi.fn(() => ({
     loadAsync: vi.fn().mockResolvedValue({
-      scene: { scale: { setScalar: vi.fn() }, rotation: { set: vi.fn() }, traverse: vi.fn() },
+      scene: { scale: { multiplyScalar: vi.fn() }, rotation: { set: vi.fn() }, traverse: vi.fn() },
     }),
   })),
 }));
 
 vi.mock("@mediapipe/tasks-vision", () => ({
-  FaceLandmarker: { createFromOptions: vi.fn().mockResolvedValue({}) },
-  FilesetResolver: { forVisionTasks: vi.fn().mockResolvedValue({}) },
+  FaceLandmarker: { createFromOptions: vi.fn(async () => ({ close: vi.fn() })) },
+  FilesetResolver: { forVisionTasks: vi.fn(async () => ({})) },
 }));
 
 // ---------------------------------------------------------------------------
@@ -146,6 +146,16 @@ function setupMediaDevices(): void {
   });
 }
 
+function makePreviewVideo(): HTMLVideoElement {
+  const video = document.createElement("video");
+  Object.defineProperties(video, {
+    videoWidth: { value: 640, configurable: true },
+    videoHeight: { value: 360, configurable: true },
+    readyState: { value: 2 },
+  });
+  return video;
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -155,12 +165,14 @@ describe("VisuTryWebSDK (facade)", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
     setupMediaDevices();
     sdk = createVisuTryWebSDK(makeOptions());
   });
 
   afterEach(() => {
     sdk.destroy();
+    vi.restoreAllMocks();
   });
 
   // --- Construction & state ----------------------------------------------
@@ -275,9 +287,9 @@ describe("VisuTryWebSDK (facade)", () => {
     expect(getImpl(sdk).isDestroyed).toBe(true);
   });
 
-  it("rejects initialize after destroy", () => {
+  it("rejects initialize after destroy", async () => {
     sdk.destroy();
-    expect(sdk.initialize()).rejects.toMatchObject({ code: "UNKNOWN" });
+    await expect(sdk.initialize()).rejects.toMatchObject({ code: "UNKNOWN" });
   });
 
   // --- loadGlasses -------------------------------------------------------
@@ -362,6 +374,145 @@ describe("VisuTryWebSDK (facade)", () => {
     expect(result.dataUrl).toBeDefined();
     expect(result.width).toBeGreaterThan(0);
     expect(result.height).toBeGreaterThan(0);
+  });
+
+  it("uses the same video dimensions and mirror for preview, renderer and pose solving", async () => {
+    sdk.destroy();
+    const video = makePreviewVideo();
+    const canvas = document.createElement("canvas");
+    video.style.transform = "rotate(0deg)";
+    sdk = createVisuTryWebSDK(makeOptions({ canvas, video, camera: { mirror: true } }));
+    const impl = getImpl(sdk);
+    const resize = vi.spyOn(impl.renderer, "resize");
+    const solve = vi.spyOn(impl.poseSolver, "solve");
+    await sdk.startCamera();
+    await sdk.loadGlasses(makeManifest());
+    impl.handleFaceDetected(buildFaceResult());
+    expect(impl.camera.getCurrentFrame().el).toBe(video);
+    expect(resize).toHaveBeenLastCalledWith(640, 360);
+    expect(solve).toHaveBeenCalledWith(expect.objectContaining({ frameSize: { width: 640, height: 360 } }));
+    expect(video.style.transform).toBe("scaleX(-1)");
+    expect(canvas.style.transform).toBe("scaleX(-1)");
+    Object.defineProperties(video, { videoWidth: { value: 360 }, videoHeight: { value: 640 } });
+    video.dispatchEvent(new Event("resize"));
+    impl.handleFaceDetected(buildFaceResult());
+    expect(resize).toHaveBeenLastCalledWith(360, 640);
+    expect(solve).toHaveBeenLastCalledWith(expect.objectContaining({ frameSize: { width: 360, height: 640 } }));
+    sdk.destroy();
+    expect(video.style.transform).toBe("rotate(0deg)");
+    expect(canvas.style.transform).toBe("");
+    expect(video.srcObject).toBeNull();
+    resize.mockClear();
+    video.dispatchEvent(new Event("resize"));
+    expect(resize).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, false])("composes camera and overlay with a single mirror transform (override: %s)", async (mirror) => {
+    sdk.destroy();
+    const video = makePreviewVideo();
+    sdk = createVisuTryWebSDK(makeOptions({ video, camera: { mirror: true } }));
+    const context = { translate: vi.fn(), scale: vi.fn(), drawImage: vi.fn() };
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(context as any);
+    const encode = vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue("data:image/png;base64,composite");
+    await sdk.startCamera();
+    const result = await sdk.snapshot({ width: 1280, height: 720, mirror });
+    const overlayCanvas = getImpl(sdk).renderer.renderer.domElement;
+    expect(context.drawImage.mock.calls).toEqual([
+      [video, 0, 0, 1280, 720],
+      [overlayCanvas, 0, 0, 1280, 720],
+    ]);
+    if (mirror === false) {
+      expect(context.scale).not.toHaveBeenCalled();
+    } else {
+      expect(context.translate).toHaveBeenCalledTimes(1);
+      expect(context.translate).toHaveBeenCalledWith(1280, 0);
+      expect(context.scale).toHaveBeenCalledTimes(1);
+      expect(context.scale).toHaveBeenCalledWith(-1, 1);
+    }
+    expect(encode).toHaveBeenCalledTimes(1);
+    expect(encode).toHaveBeenCalledWith("image/png", 0.92);
+    expect(result).toMatchObject({ dataUrl: "data:image/png;base64,composite", width: 1280, height: 720 });
+    sdk.stopCamera();
+    await expect(sdk.snapshot()).rejects.toMatchObject({ code: "SNAPSHOT_FAILED" });
+  });
+
+  it("releases the camera if the first model fails, while failed replacements preserve it", async () => {
+    const stop = vi.fn();
+    const track = { stop };
+    vi.mocked(navigator.mediaDevices.getUserMedia).mockResolvedValue({ getTracks: () => [track] } as unknown as MediaStream);
+    await sdk.startCamera();
+    const load = vi.spyOn(getImpl(sdk).renderer, "loadGlasses").mockRejectedValueOnce(new Error("missing GLB"));
+    await expect(sdk.loadGlasses(makeManifest())).rejects.toMatchObject({ message: "missing GLB" });
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(getImpl(sdk).isCameraStarted).toBe(false);
+
+    await sdk.startCamera();
+    const first = makeManifest();
+    await sdk.loadGlasses(first);
+    stop.mockClear();
+    load.mockRejectedValueOnce(new Error("missing replacement"));
+    await expect(sdk.switchGlasses({ ...first, id: "missing" })).rejects.toMatchObject({ message: "missing replacement" });
+    expect(stop).not.toHaveBeenCalled();
+    expect(getImpl(sdk).isCameraStarted).toBe(true);
+    expect(getImpl(sdk).currentGlasses).toBe(first);
+  });
+
+  it("closes a tracker that finishes initializing after destroy and emits no ready event", async () => {
+    let finish!: (landmarker: FaceLandmarker) => void;
+    const close = vi.fn();
+    vi.mocked(FaceLandmarker.createFromOptions).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    const ready = vi.fn();
+    sdk.on("ready", ready);
+    const pending = sdk.initialize();
+    await vi.waitFor(() => expect(FaceLandmarker.createFromOptions).toHaveBeenCalled());
+    sdk.destroy();
+    finish({ close } as unknown as FaceLandmarker);
+    await expect(pending).rejects.toMatchObject({ code: "UNKNOWN" });
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(ready).not.toHaveBeenCalled();
+    expect(getImpl(sdk).isInitialized).toBe(false);
+  });
+
+  it("cancels pending and queued model loads after destroy without committing events", async () => {
+    await sdk.initialize();
+    let finish!: () => void;
+    const load = vi.spyOn(getImpl(sdk).renderer, "loadGlasses")
+      .mockReturnValueOnce(new Promise<void>((resolve) => { finish = resolve; }));
+    const loaded = vi.fn();
+    sdk.on("glassesLoaded", loaded);
+    const pending = Promise.allSettled([
+      sdk.loadGlasses(makeManifest()),
+      sdk.loadGlasses({ ...makeManifest(), id: "queued" }),
+    ]);
+    await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+    sdk.destroy();
+    finish();
+    expect((await pending).every((result) => result.status === "rejected")).toBe(true);
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(loaded).not.toHaveBeenCalled();
+    expect(getImpl(sdk).currentGlasses).toBeNull();
+  });
+
+  it("a cancelled camera start cannot stop a newer stream", async () => {
+    await sdk.initialize();
+    let finishOld!: (stream: MediaStream) => void;
+    const oldStop = vi.fn();
+    const newStop = vi.fn();
+    const oldStream = { getTracks: () => [{ stop: oldStop }] } as unknown as MediaStream;
+    const newStream = { getTracks: () => [{ stop: newStop }] } as unknown as MediaStream;
+    vi.mocked(navigator.mediaDevices.getUserMedia)
+      .mockReturnValueOnce(new Promise((resolve) => { finishOld = resolve; }))
+      .mockResolvedValueOnce(newStream);
+    const oldStart = sdk.startCamera().catch((error) => error);
+    await vi.waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(1));
+    sdk.stopCamera();
+    await sdk.startCamera();
+    finishOld(oldStream);
+    expect(await oldStart).toMatchObject({ code: "CAMERA_NOT_AVAILABLE" });
+    expect(oldStop).toHaveBeenCalledTimes(1);
+    expect(newStop).not.toHaveBeenCalled();
+    expect(getImpl(sdk).isCameraStarted).toBe(true);
+    expect(getImpl(sdk).camera.videoElement.srcObject).toBe(newStream);
   });
 
   // =========================================================================

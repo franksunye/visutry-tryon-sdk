@@ -27,7 +27,7 @@ import {
 
 /** Default CDN locations for MediaPipe wasm + face landmarker model. */
 export const DEFAULT_MEDIAPIPE_WASM =
-  "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm";
+  "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm";
 export const DEFAULT_FACE_LANDMARKER_MODEL =
   "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
 

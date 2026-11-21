@@ -354,6 +354,8 @@ export interface GlassesPoseSolverInput {
   face: NormalizedFaceResult;
   asset: GlassesAssetManifest;
   config?: GlassesFittingConfig;
+  /** Source image dimensions, matching the renderer viewport aspect ratio. */
+  frameSize?: { width: number; height: number };
 }
 
 // ---------------------------------------------------------------------------

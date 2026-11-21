@@ -1,0 +1,96 @@
+{
+  "id": "reference-frame-v1",
+  "name": "Reference Frame v1",
+  "modelUrl": "/reference/v1/reference-frame-v1.glb",
+  "thumbnailUrl": "/reference/v1/reference-frame-v1.svg",
+  "format": "glb",
+  "coordinateSystem": {
+    "unit": "millimeter",
+    "forwardAxis": "+z",
+    "upAxis": "+y"
+  },
+  "dimensions": {
+    "frameWidthMm": 140,
+    "lensWidthMm": 52,
+    "lensHeightMm": 36,
+    "bridgeWidthMm": 16,
+    "templeLengthMm": 140
+  },
+  "anchors": {
+    "origin": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "noseBridge": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "leftHinge": {
+      "x": -68.2,
+      "y": 5,
+      "z": -2.5
+    },
+    "rightHinge": {
+      "x": 68.2,
+      "y": 5,
+      "z": -2.5
+    },
+    "leftLensCenter": {
+      "x": -34,
+      "y": -2,
+      "z": 0.5
+    },
+    "rightLensCenter": {
+      "x": 34,
+      "y": -2,
+      "z": 0.5
+    }
+  },
+  "fitting": {
+    "defaultScale": 1,
+    "defaultOffset": {
+      "x": 0,
+      "y": 0,
+      "z": 0.008
+    },
+    "defaultRotation": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "minScale": 0.6,
+    "maxScale": 1.8,
+    "fitBy": "eyeOuterDistance",
+    "verticalAnchor": "noseBridge"
+  },
+  "material": {
+    "frameColor": "#2E4760",
+    "frameMaterial": "technical-demo acetate appearance",
+    "frameRoughness": 0.32,
+    "frameMetalness": 0.08,
+    "lensColor": "#DDECF3",
+    "lensOpacity": 0.07,
+    "supportsTransparency": true
+  },
+  "metadata": {
+    "shapeCategory": "rectangle",
+    "colors": [
+      "#2E4760"
+    ],
+    "tags": [
+      "reference",
+      "original",
+      "demo-only",
+      "not-a-real-product"
+    ]
+  },
+  "demoOnly": true,
+  "physicalProduct": false,
+  "integrity": {
+    "algorithm": "sha256",
+    "digest": "3741d795685b0457614346ba1238a0e1dffec9a7928a3527286e612b9aeac39c",
+    "bytes": 300824
+  }
+}

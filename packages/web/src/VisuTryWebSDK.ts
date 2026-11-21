@@ -61,6 +61,19 @@ type EventHandler<E extends EventName> = VisuTrySDKEvents[E];
 export interface VisuTryWebSDKFactoryOptions extends VisuTrySDKConfig {
   /** The canvas (or selector) the Three.js renderer will draw on. */
   canvas: RenderTarget;
+  /**
+   * Optional live camera preview. The tracker reads this same video element.
+   * With a target supplied, the SDK mirrors video and canvas together according
+   * to camera.mirror (default true). Display both in the same aspect-ratio box;
+   * do not separately mirror or crop either layer in CSS.
+   */
+  video?: HTMLVideoElement | string;
+  /**
+   * "camera" exports video + 3D overlay; "overlay" exports only the 3D layer.
+   * Defaults to "camera" with a video target, otherwise the legacy "overlay".
+   * Camera snapshots require a running stream and honor SnapshotOptions.mirror.
+   */
+  snapshotMode?: "camera" | "overlay";
   /** MediaPipe-specific options (wasm path, model path, custom index map). */
   mediaPipeOptions?: MediaPipeTrackerOptions;
   /** Render options passed through to the renderer. */
@@ -107,11 +120,15 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
 
   // --- State --------------------------------------------------------------
   private initialized = false;
+  private initializePromise: Promise<void> | null = null;
   private cameraStarted = false;
+  private cameraStartPromise: Promise<void> | null = null;
+  private cameraGeneration = 0;
   private tryOnRunning = false;
   private destroyed = false;
   private currentAsset: GlassesAssetManifest | null = null;
   private rafId: number | null = null;
+  private loopGeneration = 0;
   private loadGlassesPromise: Promise<void> | null = null;
   private analysisInProgress = false;
 
@@ -128,6 +145,11 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
   private consecutiveErrors = 0;
   private static readonly MAX_CONSECUTIVE_ERRORS = 10;
   private visibilityHandler: (() => void) | null = null;
+  private readonly presentationStyles = new Map<HTMLElement, { original: string; applied: string }>();
+  private presentationVideo: HTMLVideoElement | null = null;
+  private readonly onCameraResize = (): void => {
+    if (this.cameraStarted && !this.destroyed) this.syncCameraPresentation();
+  };
 
   // --- Analysis -----------------------------------------------------------
   private analysisTargetFrames = 5;
@@ -139,7 +161,7 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
   constructor(options: VisuTryWebSDKFactoryOptions) {
     this.factoryOptions = options;
     this.canvasTarget = options.canvas;
-    this.renderOptions = options.renderer ?? {
+    this.renderOptions = options.renderer ?? options.rendererOptions ?? {
       width: options.camera?.width ?? 640,
       height: options.camera?.height ?? 480,
       mirror: options.camera?.mirror ?? true,
@@ -147,7 +169,7 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
     };
     this.trackerConfig = options.tracker ?? options.trackerConfig ?? { mode: "balanced" };
 
-    this.camera = new WebCameraProvider();
+    this.camera = new WebCameraProvider(options.video);
     this.tracker = new MediaPipeFaceTracker(
       options.mediaPipeOptions ?? {},
       this.trackerConfig,
@@ -167,45 +189,94 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
   async initialize(): Promise<void> {
     this.assertNotDestroyed();
     if (this.initialized) return;
+    if (this.initializePromise) return this.initializePromise;
 
+    const pending = this.initializeInternal();
+    this.initializePromise = pending;
+    try {
+      await pending;
+    } finally {
+      if (this.initializePromise === pending) this.initializePromise = null;
+    }
+  }
+
+  private async initializeInternal(): Promise<void> {
     try {
       // Initialize tracker (loads MediaPipe wasm + model).
       await this.tracker.initialize(this.trackerConfig);
+      if (this.destroyed) {
+        // A landmarker may have finished creating after destroy() ran.
+        this.tracker.destroy();
+        this.assertNotDestroyed();
+      }
       // Initialize renderer (creates WebGL context + camera + lights).
       await this.renderer.initialize(this.canvasTarget, this.renderOptions);
+      this.assertNotDestroyed();
       this.initialized = true;
       this.emit("ready");
     } catch (err) {
       this.emitError(err);
+      // A partially initialized SDK cannot be reused safely. Callers retry
+      // with a fresh instance; release any tracker/GPU resources already made.
+      this.destroy();
       throw err;
     }
   }
 
   async startCamera(): Promise<void> {
     this.assertNotDestroyed();
-    if (!this.initialized) {
-      await this.initialize();
-    }
     if (this.cameraStarted) return;
+    if (this.cameraStartPromise) return this.cameraStartPromise;
+    const pending = this.startCameraInternal(this.cameraGeneration);
+    this.cameraStartPromise = pending;
     try {
-      await this.camera.initialize(this.factoryOptions.camera);
+      await pending;
+    } finally {
+      if (this.cameraStartPromise === pending) this.cameraStartPromise = null;
+    }
+  }
+
+  private async startCameraInternal(generation: number): Promise<void> {
+    try {
+      if (!this.initialized) await this.initialize();
+      this.assertCameraStartCurrent(generation);
+      await this.camera.initialize({
+        ...this.factoryOptions.camera,
+        mirror: this.factoryOptions.camera?.mirror ?? this.renderOptions.mirror ?? true,
+      });
+      this.assertCameraStartCurrent(generation);
       await this.camera.start();
+      this.assertCameraStartCurrent(generation);
       this.cameraStarted = true;
+      this.syncCameraPresentation();
     } catch (err) {
+      // A cancelled old request must not stop a newer camera start.
+      if (generation === this.cameraGeneration) {
+        this.camera.stop();
+        this.cameraStarted = false;
+      }
       this.emitError(err);
       throw err;
     }
   }
 
   stopCamera(): void {
+    this.cameraGeneration++;
+    this.cameraStartPromise = null;
+    this.stopTryOn();
     this.camera.stop();
     this.cameraStarted = false;
   }
 
   async startTryOn(): Promise<void> {
     this.assertNotDestroyed();
+    const generation = this.loopGeneration;
     if (!this.cameraStarted) {
       await this.startCamera();
+    }
+    this.assertNotDestroyed();
+    if (generation !== this.loopGeneration) {
+      throw createSDKError("UNKNOWN", "Try-on start was cancelled");
     }
     if (this.tryOnRunning) return;
     this.tryOnRunning = true;
@@ -218,6 +289,7 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
 
   stopTryOn(): void {
     this.tryOnRunning = false;
+    this.loopGeneration++;
     if (this.rafId !== null) {
       cancelAnimationFrame(this.rafId);
       this.rafId = null;
@@ -232,34 +304,39 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
 
   async loadGlasses(asset: GlassesAssetManifest): Promise<void> {
     this.assertNotDestroyed();
-    // Chain off any in-flight load to prevent race conditions.
-    if (this.loadGlassesPromise) {
-      await this.loadGlassesPromise.catch(() => { /* swallow prior failure */ });
-    }
-    const promise = this.loadGlassesInternal(asset);
+    // Link each request to the previous request immediately. Multiple callers
+    // must not all wait for the same first load and then start concurrently.
+    const promise = (this.loadGlassesPromise ?? Promise.resolve())
+      .catch(() => { /* A failed replacement does not block the next one. */ })
+      .then(() => {
+        this.assertNotDestroyed();
+        return this.loadGlassesInternal(asset);
+      });
     this.loadGlassesPromise = promise;
     try {
       await promise;
     } finally {
-      this.loadGlassesPromise = null;
+      if (this.loadGlassesPromise === promise) this.loadGlassesPromise = null;
     }
   }
 
   private async loadGlassesInternal(asset: GlassesAssetManifest): Promise<void> {
     try {
       await this.renderer.loadGlasses(asset);
+      this.assertNotDestroyed();
       this.currentAsset = asset;
       this.emit("glassesLoaded", asset);
     } catch (err) {
       const sdkErr = this.toSDKError(err);
+      if (!this.currentAsset) this.stopCamera();
       this.emit("glassesLoadFailed", sdkErr);
       throw sdkErr;
     }
   }
 
   async switchGlasses(asset: GlassesAssetManifest): Promise<void> {
-    // switchGlasses is semantically the same as loadGlasses (the renderer
-    // disposes the previous model before loading the new one).
+    // The previous model remains visible until the replacement loads; failures
+    // leave both the previous model and its identity unchanged.
     await this.loadGlasses(asset);
   }
 
@@ -435,9 +512,75 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
     }
 
     try {
+      const mode = this.factoryOptions.snapshotMode ?? (this.factoryOptions.video ? "camera" : "overlay");
+      if (mode === "camera") return this.captureCameraSnapshot(options);
       return await this.renderer.snapshot(options);
     } catch (err) {
       throw this.toSDKError(err);
+    }
+  }
+
+  private captureCameraSnapshot(options?: SnapshotOptions): SnapshotResult {
+    const video = this.camera.videoElement;
+    if (!this.cameraStarted || !video || video.readyState < 2 || !video.videoWidth || !video.videoHeight) {
+      throw createSDKError("SNAPSHOT_FAILED", "A running camera frame is required for a camera snapshot");
+    }
+    const width = options?.width ?? video.videoWidth;
+    const height = options?.height ?? video.videoHeight;
+    if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
+      throw createSDKError("SNAPSHOT_FAILED", "Snapshot dimensions must be positive integers");
+    }
+    const output = document.createElement("canvas");
+    output.width = width;
+    output.height = height;
+    const context = output.getContext("2d");
+    if (!context) throw createSDKError("SNAPSHOT_FAILED", "Cannot create snapshot canvas");
+
+    // Video pixels and WebGL pixels are both unmirrored. Apply the requested
+    // output transform once to their shared composition, independently of CSS.
+    if (options?.mirror ?? this.camera.mirror) {
+      context.translate(width, 0);
+      context.scale(-1, 1);
+    }
+    context.drawImage(video, 0, 0, width, height);
+    this.renderer.drawToCanvas(context, width, height);
+    return {
+      dataUrl: output.toDataURL(options?.format ?? "image/png", options?.quality ?? 0.92),
+      width,
+      height,
+      timestamp: Date.now(),
+    };
+  }
+
+  private syncCameraPresentation(): void {
+    const video = this.camera.videoElement;
+    if (!video) return;
+    if (this.presentationVideo !== video) {
+      this.presentationVideo?.removeEventListener("resize", this.onCameraResize);
+      this.presentationVideo = video;
+      video.addEventListener("resize", this.onCameraResize);
+    }
+    // Match the actual camera stream rather than its requested ideal size.
+    if (video.videoWidth > 0 && video.videoHeight > 0) {
+      this.renderer.resize(video.videoWidth, video.videoHeight);
+    }
+    if (!this.factoryOptions.video) return;
+
+    const target = this.canvasTarget;
+    const canvas = typeof target === "string"
+      ? document.querySelector(target)
+      : target instanceof HTMLCanvasElement
+        ? target
+        : (target as { el?: unknown }).el;
+    if (!(canvas instanceof HTMLCanvasElement)) {
+      throw createSDKError("RENDERER_INIT_FAILED", "Camera preview requires a canvas element");
+    }
+    const transform = this.camera.mirror ? "scaleX(-1)" : "none";
+    for (const element of [video, canvas]) {
+      if (!this.presentationStyles.has(element)) {
+        this.presentationStyles.set(element, { original: element.style.transform, applied: transform });
+      }
+      element.style.transform = transform;
     }
   }
 
@@ -482,7 +625,13 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
 
   destroy(): void {
     if (this.destroyed) return;
+    // Mark first, so pending async work cannot commit successful state/events.
+    this.destroyed = true;
+    this.cameraGeneration++;
+    this.cameraStartPromise = null;
     this.stopTryOn();
+    this.presentationVideo?.removeEventListener("resize", this.onCameraResize);
+    this.presentationVideo = null;
     this.camera.destroy();
     this.tracker.destroy();
     this.renderer.dispose();
@@ -491,7 +640,12 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
     this.detectLatencies.length = 0;
     this.renderLatencies.length = 0;
     this.currentAsset = null;
-    this.destroyed = true;
+    this.cameraStarted = false;
+    this.initialized = false;
+    for (const [element, style] of this.presentationStyles) {
+      if (element.style.transform === style.applied) element.style.transform = style.original;
+    }
+    this.presentationStyles.clear();
   }
 
   // -----------------------------------------------------------------------
@@ -507,22 +661,27 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
     if (this.visibilityHandler) return;
     this.visibilityHandler = () => {
       if (document.hidden) {
+        this.loopGeneration++;
+        this.cameraGeneration++;
+        this.cameraStartPromise = null;
         // Tab hidden: cancel RAF and stop camera stream.
         if (this.rafId !== null) {
           cancelAnimationFrame(this.rafId);
           this.rafId = null;
         }
         this.camera.stop();
+        this.cameraStarted = false;
       } else {
         // Tab visible again: restart camera and resume loop.
         if (this.tryOnRunning && !this.destroyed) {
-          this.camera.start().then(() => {
+          this.startCamera().then(() => {
+            if (this.destroyed || !this.tryOnRunning || document.hidden) {
+              return;
+            }
             this.smoother.reset();
             this.consecutiveErrors = 0;
             this.loop();
-          }).catch((err) => {
-            this.emitError(err);
-          });
+          }).catch(() => { /* startCamera already releases and reports failures. */ });
         }
       }
     };
@@ -542,6 +701,7 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
 
   private loop = (): void => {
     if (!this.tryOnRunning || this.destroyed) return;
+    const generation = this.loopGeneration;
 
     const frameStart = performance.now();
     this.frameTimes.push(frameStart);
@@ -558,6 +718,7 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
 
     const detectStart = performance.now();
     this.tracker.detect(frameInput).then((face) => {
+      if (this.destroyed || !this.tryOnRunning || generation !== this.loopGeneration) return;
       const detectEnd = performance.now();
       this.recordLatency(this.detectLatencies, detectEnd - detectStart);
 
@@ -576,24 +737,25 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
       // Emit performance stats periodically.
       this.maybeEmitPerformance(frameStart);
 
-      if (this.tryOnRunning && !this.destroyed) {
+      if (this.tryOnRunning && !this.destroyed && generation === this.loopGeneration) {
         this.rafId = requestAnimationFrame(this.loop);
       }
     }).catch((err) => {
+      if (this.destroyed || !this.tryOnRunning || generation !== this.loopGeneration) return;
       this.emitError(err);
       this.consecutiveErrors++;
       if (this.consecutiveErrors >= VisuTryWebSDKImpl.MAX_CONSECUTIVE_ERRORS) {
         // Circuit breaker: stop the loop after too many persistent failures.
         console.error("[VisuTrySDK]", `Tracking loop stopped after ${this.consecutiveErrors} consecutive errors.`);
         this.emit("error", createSDKError("UNKNOWN", "Tracking loop stopped due to persistent failures."));
-        this.tryOnRunning = false;
+        this.stopCamera();
         return;
       }
       if (this.tryOnRunning && !this.destroyed) {
         // Backoff: wait longer as errors accumulate before retrying.
         const backoffMs = Math.min(1000 * this.consecutiveErrors, 5000);
         setTimeout(() => {
-          if (this.tryOnRunning && !this.destroyed) {
+          if (this.tryOnRunning && !this.destroyed && generation === this.loopGeneration) {
             this.rafId = requestAnimationFrame(this.loop);
           }
         }, backoffMs);
@@ -610,10 +772,14 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
     }
 
     if (this.currentAsset) {
+      const video = this.camera.videoElement;
       const rawPose = this.poseSolver.solve({
         face,
         asset: this.currentAsset,
         config: this.factoryOptions.fitting,
+        frameSize: video && video.videoWidth > 0 && video.videoHeight > 0
+          ? { width: video.videoWidth, height: video.videoHeight }
+          : undefined,
       });
       const smoothedPose = this.smoother.smooth(rawPose, performance.now());
       this.renderer.applyPose(smoothedPose);
@@ -704,6 +870,13 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
   private assertNotDestroyed(): void {
     if (this.destroyed) {
       throw createSDKError("UNKNOWN", t("error.sdk_destroyed"));
+    }
+  }
+
+  private assertCameraStartCurrent(generation: number): void {
+    this.assertNotDestroyed();
+    if (generation !== this.cameraGeneration) {
+      throw createSDKError("CAMERA_NOT_AVAILABLE", "Camera start was cancelled");
     }
   }
 

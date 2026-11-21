@@ -6,6 +6,34 @@ import { buildFaceResult, buildManifest, buildSemanticPoints } from "../__fixtur
 describe("GlassesPoseSolver", () => {
   const solver = new GlassesPoseSolver();
 
+  it("uses source frame dimensions instead of face-box aspect for fitting", () => {
+    const sem = buildSemanticPoints("oval");
+    sem.leftEyeOuter = { x: 0.35, y: 0.4, z: 0 };
+    sem.rightEyeOuter = { x: 0.65, y: 0.4, z: 0 };
+    sem.noseBridge = { x: 0.6, y: 0.5, z: 0 };
+    const asset = buildManifest();
+    const face = buildFaceResult(sem);
+    const input = { face, asset, frameSize: { width: 1280, height: 720 } };
+    const pose = solver.solve(input);
+    const changedBox = solver.solve({
+      ...input,
+      face: { ...face, bbox: { x: 0.1, y: 0.1, width: 0.5, height: 0.5 } },
+    });
+    expect(pose.visible).toBe(true);
+    expect(pose.scale.x * asset.dimensions.frameWidthMm * MM_TO_RENDER_WORLD)
+      .toBeCloseTo(0.3 * 1280 / 720);
+    expect(pose.position.x).toBeCloseTo(0.1 * 1280 / 720);
+    expect(changedBox.position).toEqual(pose.position);
+    expect(changedBox.scale).toEqual(pose.scale);
+  });
+
+  it("retains legacy behavior when the optional source dimensions are invalid", () => {
+    const input = { face: buildFaceResult(buildSemanticPoints("oval")), asset: buildManifest() };
+    const legacy = solver.solve(input);
+    expect(solver.solve({ ...input, frameSize: { width: 0, height: 720 } })).toEqual(legacy);
+    expect(solver.solve({ ...input, frameSize: { width: 640, height: Number.NaN } })).toEqual(legacy);
+  });
+
   it("produces a visible pose for a valid frontal face", () => {
     const face = buildFaceResult(buildSemanticPoints("oval"));
     const asset = buildManifest();

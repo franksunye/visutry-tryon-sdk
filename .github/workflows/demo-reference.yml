@@ -1,0 +1,87 @@
+name: SDK reference demo
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: demo-reference-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  reference-demo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.31.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify reference geometry and prepare pinned runtime
+        run: pnpm demo:prepare
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Build SDK and static demo
+        run: pnpm demo:build
+
+      - name: Install Chromium and system dependencies
+        run: pnpm --filter visutry-web-demo exec playwright install --with-deps chromium
+
+      - name: Download and verify test-only camera fixture
+        run: pnpm demo:fixture
+
+      - name: Prepare reproducible camera input
+        shell: bash
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends -y ffmpeg
+          fi
+          video_path="$RUNNER_TEMP/visutry-reference.y4m"
+          ffmpeg -hide_banner -loglevel error -y \
+            -loop 1 -i examples/web-demo/e2e/fixtures/astronaut.png \
+            -vf 'crop=320:320:60:0,scale=480:480,pad=640:480:80:0' \
+            -r 15 -t 2 -pix_fmt yuv420p "$video_path"
+          test -s "$video_path"
+          echo "VISUTRY_FAKE_VIDEO=$video_path" >> "$GITHUB_ENV"
+
+      - name: Test reference demo with real MediaPipe and renderer
+        run: pnpm demo:test
+
+      - name: Upload browser test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reference-demo-browser-evidence
+          path: |
+            examples/web-demo/playwright-report/
+            examples/web-demo/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
