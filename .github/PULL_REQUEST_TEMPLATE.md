@@ -1,24 +1,25 @@
-## Description
+## Problem
 
-<!-- What does this PR do? Link any relevant issues. -->
+<!-- Explain the concrete problem and why it matters. Link the issue if one exists. -->
 
-## Type of Change
+## Change
 
-- [ ] Bug fix (non-breaking change which fixes an issue)
-- [ ] New feature (non-breaking change which adds functionality)
-- [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
-- [ ] Documentation update
-- [ ] Refactor / performance improvement
+<!-- Describe the resulting behavior or documentation. Use English throughout. -->
 
-## Changeset
+## Validation
 
-- [ ] I have run `pnpm changeset` and included a changeset
+<!-- Record commands, source revision, and observed results. Separate local checks, CI, package publication, deployment, and real-device evidence. -->
+
+## Compatibility and scope
+
+<!-- Note API, scoring, threshold, warning, coordinate, privacy-default, or asset changes. For documentation-only changes, state that runtime behavior is unchanged. -->
 
 ## Checklist
 
-- [ ] Code passes `pnpm typecheck`
-- [ ] Code passes `pnpm lint`
-- [ ] Tests pass (`pnpm test`)
-- [ ] New code has test coverage (>= 80%)
-- [ ] Documentation updated if public API changed
-- [ ] No `any` types introduced
+- [ ] Documentation and examples match actual exports and defaults.
+- [ ] Current behavior, experimental capabilities, and planned work are distinguished.
+- [ ] Relevant links and examples have been checked.
+- [ ] Runtime gates passed, or not applicable with an explanation for documentation-only work.
+- [ ] Camera/rendering/asset changes include the reference-browser evidence, or are not applicable.
+- [ ] Public API/package-behavior changes include a Changeset, or are documentation-only.
+- [ ] Shared algorithms are reused rather than copied into another implementation.

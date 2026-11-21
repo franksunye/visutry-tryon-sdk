@@ -1,6 +1,6 @@
 import type { PrivacyConfig, SDKError } from "../types/index.js";
 
-/** Safe default privacy configuration (spec §19.2). */
+/** Current policy defaults: local processing, snapshots enabled, analytics disabled. */
 export const DEFAULT_PRIVACY_CONFIG: PrivacyConfig = {
   processOnDeviceOnly: true,
   allowSnapshotExport: true,
@@ -9,12 +9,12 @@ export const DEFAULT_PRIVACY_CONFIG: PrivacyConfig = {
 };
 
 /**
- * Enforces the SDK privacy contract.
+ * Evaluates SDK privacy policy for callers that explicitly consult this helper.
  *
- * The guard is the single source of truth for what may leave the device. By
- * default everything stays on-device; analytics is off; snapshots require
- * explicit opt-in. The guard exposes intent-revealing methods so the rest of
- * the SDK never has to reason about the raw config flags.
+ * Upload-policy methods deny face-data uploads and analytics is disabled by
+ * default. Snapshot export is enabled by the current default configuration.
+ * The Web facade checks snapshot permission; this helper does not intercept
+ * network requests or prevent host applications from using returned data.
  */
 export class PrivacyGuard {
   private config: PrivacyConfig;
@@ -34,18 +34,18 @@ export class PrivacyGuard {
     return { ...this.config };
   }
 
-  /** Whether image / video frames may be sent to a server. Always false in v1.0. */
+  /** Upload-policy decision for images / video frames; always false in this implementation. */
   canUploadFrames(): boolean {
     // On-device-only is the hard contract; uploads are never permitted.
     return false;
   }
 
-  /** Whether face landmarks may leave the device. Always false in v1.0. */
+  /** Upload-policy decision for landmarks; always false in this implementation. */
   canUploadLandmarks(): boolean {
     return false;
   }
 
-  /** Whether face geometry / metrics may leave the device. Always false in v1.0. */
+  /** Upload-policy decision for geometry / metrics; always false in this implementation. */
   canUploadFaceGeometry(): boolean {
     return false;
   }
@@ -96,7 +96,8 @@ export class PrivacyGuard {
 
   /**
    * Returns a redaction summary for diagnostic logging: lists which data
-   * categories are allowed to leave the device. Never includes actual data.
+   * categories the policy permits. It does not redact returned data or enforce
+   * transport restrictions. Never includes actual face data.
    */
   redactionSummary(): Record<string, boolean> {
     return {

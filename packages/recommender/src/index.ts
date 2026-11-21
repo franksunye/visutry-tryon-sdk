@@ -2,7 +2,7 @@
  * @visutry/recommender
  *
  * Glasses recommendation engine for the VisuTry SDK. Combines face-shape x
- * frame-shape matching, millimetre-level size recommendation and user
+ * frame-shape matching, heuristic size estimates expressed in millimetres and user
  * preference scoring to rank a glasses inventory for a given face.
  */
 

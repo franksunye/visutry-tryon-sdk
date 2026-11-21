@@ -15,7 +15,9 @@ What problem does this feature solve? Or what use case does it enable?
 
 ## Proposed Solution
 
-Describe the solution you'd like. API sketches are welcome.
+Describe the solution you'd like. API sketches are welcome; label proposed APIs as proposals.
+Identify the owning layer: shared core, recommender, platform adapter, or consuming application.
+Explain how existing shared logic can be reused.
 
 ## Alternatives Considered
 
@@ -23,4 +25,6 @@ Any alternative solutions or features you've considered.
 
 ## Additional Context
 
-Any other context or screenshots.
+Include intended platforms, compatibility needs, and a concrete completion criterion. Use English
+for project-facing content. Check the project roadmap before proposing a separate implementation
+of a capability that already exists.

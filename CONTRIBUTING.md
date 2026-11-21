@@ -1,131 +1,138 @@
 # Contributing to VisuTry SDK
 
-Thank you for your interest in contributing to VisuTry! This document covers the development setup, coding standards, and pull request process.
+Contributions should make the shared visual capabilities easier to trust, integrate, and maintain.
+Start with the [documentation index](docs/README.md), [architecture contract](docs/architecture.md),
+and [roadmap](docs/roadmap.md).
 
-## Development Setup
+## Development setup
 
-### Prerequisites
-
-- **Node.js** >= 18
-- **pnpm** >= 9 (`npm install -g pnpm`)
-- A modern browser with WebGL2 and `getUserMedia` support (for demo testing)
-
-### Getting Started
+Use Node.js 22 and pnpm 10.31.0 to match CI. Package engines permit Node.js 20 or newer, but the
+current CI matrix exercises Node.js 22. The root `packageManager` field pins pnpm.
 
 ```bash
 git clone https://github.com/franksunye/visutry-tryon-sdk.git
 cd visutry-tryon-sdk
-pnpm install
+corepack pnpm install --frozen-lockfile
+corepack pnpm build
+corepack pnpm demo:web
 ```
 
-### Build
+If Corepack is not available in your environment, install the pinned pnpm version and use `pnpm`
+for the same commands. Do not regenerate the lockfile with a different package-manager major version
+as an incidental documentation change.
 
-```bash
-pnpm build          # Build all packages
-pnpm typecheck      # Type check all packages
-pnpm test           # Run all unit tests
-pnpm test:coverage  # Run tests with coverage report
-pnpm lint           # Lint all TypeScript files
-pnpm format         # Format all files with Prettier
-```
+The browser demo needs WebGL, a secure context, and camera permission. Runtime preparation may fetch
+the pinned model. See [Getting started](docs/getting-started.md) for details and the
+[reference-release procedure](docs/SDK_REFERENCE_RELEASE.md) for camera-fixture testing.
 
-### Running the Demo
+## Package ownership
 
-```bash
-cd examples/web-demo
-pnpm install
-pnpm dev
-```
+- `tryon-core`: shared contracts and algorithms, without platform runtime imports.
+- `recommender`: generic inventory scoring and heuristic sizing.
+- `tryon-web`: browser input, tracking, rendering, and lifecycle.
+- `tryon-wechat`: experimental WeChat adapters with explicitly documented gaps.
+- `demo-assets`: private workspace reference assets and provenance.
 
-Open `http://localhost:5173` in your browser.
+Reuse the authoritative algorithm rather than copying it into an adapter or application. Changes to
+thresholds, warning semantics, coordinates, or recommendation scores require compatibility evidence.
+An API resemblance does not establish that two adapters are interchangeable.
 
-## Architecture
+## Code and documentation standards
 
-The SDK follows a **core / adapter** separation:
+- Keep TypeScript strict and use concrete types or `unknown` with narrowing.
+- Follow existing ESM imports and repository Prettier configuration.
+- Put algorithm and behavior tests beside the relevant source.
+- Keep runtime, model, asset, and application-version evidence separate.
+- Use English for documentation, API comments, examples, project-facing issues, and pull requests.
+- Preserve third-party notices and asset provenance.
 
-- **`@visutry/tryon-core`** — Platform-agnostic algorithms (no browser, MediaPipe, or Three.js imports). All types, face shape scoring, pose solving, smoothing, quality gating, and privacy logic live here.
-- **`@visutry/tryon-web`** — H5 adapter. Implements `MediaPipeFaceTracker`, `WebCameraProvider`, `ThreeJsRenderer`, and `LandmarkOverlay` on top of core.
-- **`@visutry/tryon-wechat`** — WeChat Mini Program adapter (experimental).
-- **`@visutry/recommender`** — Glasses recommendation engine.
+### Documentation changes
 
-Core must never import from adapter packages. Adapters depend on core, never on each other.
+Update the document that owns the subject, and link to it from other pages. The
+[documentation index](docs/README.md) lists those responsibilities.
 
-## Coding Standards
+Before review:
 
-- **TypeScript strict mode** — all code must pass `tsc --strict` with zero errors
-- **No `any` types** — use `unknown` and type narrow, or define proper interfaces
-- **ESM first** — all packages use `"type": "module"` with `.js` extensions in imports
-- **Co-located tests** — unit tests sit next to source files as `*.test.ts`
-- **Coverage threshold** — 80% statements/lines/functions, 75% branches (enforced in CI)
-- **Prettier formatting** — `semi: true`, `double quotes`, `printWidth: 100`, `trailingComma: "all"`
-
-## Pull Request Process
-
-1. **Create a changeset** — Run `pnpm changeset` to describe what changed and which packages are affected. This is required for all PRs that modify published packages.
-
-2. **Write tests** — New features and bug fixes must include tests. Aim for at least 80% coverage on new code.
-
-3. **Update documentation** — If you add a public API, update the relevant docs file and README.
-
-4. **Ensure CI passes** — All checks (lint, typecheck, test, build) must pass:
+1. Check examples against exported types and actual defaults. Include necessary initialization,
+   input assumptions, error handling, and cleanup.
+2. Distinguish implemented behavior, experimental code, accepted verification, and planned work.
+3. Verify relative links and anchors. Link cross-repository evidence to inspected revisions.
+4. Generate API documentation when changing README/API-facing content or public comments:
 
    ```bash
-   pnpm lint && pnpm typecheck && pnpm test && pnpm build
+   corepack pnpm build
+   corepack pnpm docs:api
    ```
 
-5. **Keep PRs focused** — One feature or fix per PR. Split large changes into multiple PRs.
-
-## Commit Messages
-
-Use clear, descriptive commit messages. Suggested format:
-
-```
-type: short description
-
-Optional longer description.
-```
-
-Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `perf`
-
-## Release Process
-
-The SDK uses [Changesets](https://github.com/changesets/changesets) for version management and npm OIDC Trusted Publishing for automated, tokenless releases.
-
-### How Releases Work
-
-1. **Create a changeset** — When making changes that affect published packages, run:
+5. Format the Markdown files you changed; avoid reformatting unrelated source:
 
    ```bash
-   pnpm changeset
+   corepack pnpm exec prettier --check README.md docs/README.md
    ```
 
-   Select the affected packages, choose bump type (patch/minor/major), and write a summary. This creates a `.changeset/*.md` file that should be committed with your PR.
+Generated files under `docs/api/` are ignored build outputs. Edit source comments and Markdown,
+not generated HTML. Documentation-only changes do not need invented unit tests or a package-version
+bump. If examples expose an implementation defect, document it accurately and track a separate fix
+unless the approved change includes that behavior.
 
-2. **Version PR** — When a changeset is merged to `main`, the Release workflow automatically opens a "Version Packages" PR that bumps versions and updates CHANGELOGs. Merge this PR to trigger a release.
+## Verification
 
-3. **Automatic publish** — Pushing to `main` (including merging the version PR) triggers the Release workflow which:
-   - Builds all packages
-   - Publishes to npm via OIDC Trusted Publishing (no tokens stored in GitHub)
-   - Creates git tags for each released version
+For runtime changes, run the existing gates:
 
-4. **Manual trigger** — The Release workflow can also be triggered manually from the GitHub Actions tab (`workflow_dispatch`).
+```bash
+corepack pnpm lint
+corepack pnpm typecheck
+corepack pnpm test:coverage
+corepack pnpm build
+```
 
-### OIDC Trusted Publishing
+`vitest.config.ts` defines global coverage thresholds of 80% for statements, functions, and lines,
+and 75% for branches. Coverage measures exercised code, not device support or algorithm accuracy.
 
-npm packages are published using [OIDC Trusted Publishing](https://docs.npmjs.com/generating-provenance-statements) — no `NPM_TOKEN` secret is stored in GitHub. Each package's npm page has a Trusted Publisher configured for `franksunye/visutry-tryon-sdk` with workflow `release.yml`.
+Camera, rendering, snapshot, model, and asset changes also require the
+[reference-demo gate](docs/SDK_REFERENCE_RELEASE.md). Its real Chromium tracker/renderer tests use a
+camera fixture; physical-device qualification remains separate. Report the command, revision, and
+actual result, including failures or skipped checks.
 
-### What Not to Do
+## Pull requests
 
-- Do not manually run `npm publish` — releases go through CI only
-- Do not manually edit `package.json` versions or `CHANGELOG.md` — use changesets
-- Do not create git tags manually — the publish script handles tagging
+Explain the problem, the changed behavior or documentation, and the evidence needed to review it.
+Keep implementation work separate from unrelated refactoring. Link the relevant issue when one
+exists, and use the [pull-request template](.github/PULL_REQUEST_TEMPLATE.md).
 
-## Reporting Issues
+Public API or package-behavior changes require a Changeset for the affected packages. Run
+`corepack pnpm changeset`, select the appropriate version impact, and explain compatibility changes.
+Documentation-only updates can mark the Changeset item as not applicable.
 
-- Use [GitHub Issues](https://github.com/franksunye/visutry-tryon-sdk/issues) to report bugs or request features
-- Include the SDK version, browser/platform, and a minimal reproduction
-- For security vulnerabilities, see [SECURITY.md](SECURITY.md) — do not open public issues
+Suggested commit prefixes are `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, and `perf`.
 
-## License
+## Release and documentation delivery
 
-By contributing, you agree that your contributions will be licensed under the [MIT License](LICENSE).
+The checked-in workflows are the authority for automation:
+
+| Workflow                                                   | Current behavior                                                                                       |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| [CI](.github/workflows/ci.yml)                             | Lint, typecheck, coverage, clean builds, and API documentation generation on pull requests and `main`. |
+| [SDK reference demo](.github/workflows/demo-reference.yml) | Prepare assets, build, and run the selected real-browser reference suite on pull requests and `main`.  |
+| [Deploy API Docs](.github/workflows/docs.yml)              | Generate TypeDoc and deploy it to GitHub Pages on `main` or manual dispatch.                           |
+| [Release](.github/workflows/release.yml)                   | Build and invoke the OIDC publishing script, then open a version PR when pending Changesets exist.     |
+
+The publishing script checks each core, recommender, Web, and WeChat name/version against the npm
+registry and skips versions already present. Versions absent from the registry are published using
+the configured trusted-publishing flow; the script creates a version tag if absent. Source package
+versions or a configured workflow are not proof that registry publication succeeded.
+
+Do not manually publish packages, edit version numbers/changelogs for a release, or create release
+tags outside the governed process. Use Changesets and inspect the actual workflow and registry
+results. Documentation generation, npm publishing, reference-demo deployment, and consuming-app
+release are independent events. The reference demo currently uses a separately recorded deployment
+process; its validation workflow does not itself deploy the site.
+
+## Issues and security
+
+Use [GitHub Issues](https://github.com/franksunye/visutry-tryon-sdk/issues) for reproducible bugs and
+scoped proposals. Include package/source versions, platform, minimal code, and expected versus actual
+behavior. Use a permitted fixture instead of posting private face images or raw personal data.
+
+Report vulnerabilities privately through [SECURITY.md](SECURITY.md). Contributor conduct is covered
+by [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Contributions are licensed under the [MIT license](LICENSE).

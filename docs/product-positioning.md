@@ -1,221 +1,115 @@
-# VisuTry Try-On SDK Product Positioning
+# Product positioning
+
+- **Status:** Active product direction
+- **Reviewed:** 2026-11-21
+- **Owner:** Product and Engineering
+- **Scope:** SDK purpose, audiences, capability ownership, and relationship to VisuTry products.
 
-**Status:** Active positioning document  
-**Created:** 2026-07-08  
-**Owner:** Product / Engineering  
-**Review cadence:** Monthly, or when SDK scope changes  
-**Scope:** Role of `visutry-tryon-sdk` within the broader VisuTry product system.
+## Purpose
 
----
+VisuTry SDK is an open-source, reusable visual capability layer for face geometry, local eyewear
+recommendation, and AR glasses rendering. It serves VisuTry's own product surfaces and external
+developers who need these capabilities in their applications.
 
-## 1. Purpose
+The SDK is the intended shared visual foundation of the VisuTry product system. This is an
+architectural direction, not a claim that every existing application already imports the SDK.
+[Integration status](integration-status.md) records the current adoption evidence.
 
-This document defines what the VisuTry Try-On SDK is, what it owns, and what it should not own.
+## Relationship to the product platform
 
-The SDK is part of the broader VisuTry product system. It is not a separate commercial product platform.
+VisuTry remains a platform for both consumers and merchants. Consumer products help people discover
+and evaluate eyewear; merchant products help businesses present inventory and capture commerce
+intent. Both can consume shared visual capabilities while retaining their own product behavior.
 
-Working model:
+| Layer                                           | Responsibility                                                                                                           |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| SDK core and recommender                        | Reusable geometry, classification, quality rules, pose, smoothing, manifest contracts, and generic inventory ranking.    |
+| SDK platform adapters                           | Camera and image input, landmark-runtime integration, coordinate normalization, rendering, and platform lifecycle.       |
+| Consumer, Mobile, Store, and other applications | User journeys, UI, catalog selection, accessibility, consent, product-specific policies, and calls to platform services. |
+| VisuTry platform services                       | Identity, payments, entitlements, saved history, hosted AI requests, merchant tenancy, and commerce workflows.           |
 
-> The SDK is the reusable eyewear intelligence and try-on capability layer behind VisuTry.
+Shared code does not require identical interfaces or commercial offers. Each application owns how
+it presents and grants access to a capability; it should not independently reimplement the same
+geometry or scoring rule.
 
----
+## Product boundaries
 
-## 2. Relationship to VisuTry
+### Local geometry and paid Face Analysis
 
-VisuTry is the product platform and commercial system.
+The SDK computes geometric features and heuristic face-shape results from local landmarks. Its
+generic recommender ranks an inventory supplied by the calling application.
 
-The SDK powers reusable capabilities used by VisuTry Web, VisuTry Mobile, future mini-program surfaces, and future merchant / widget flows.
+VisuTry's paid Face Analysis / Advisor experience includes platform-owned reports, personalization,
+entitlements, and product workflows. Sharing geometry does not authorize exposing a paid report or
+moving server prompts, account data, or entitlement rules into the open-source packages. Changes to
+free versus paid product access require a separate product decision.
 
-Short version:
+### AR rendering and AI-generated try-on
 
-```text
-VisuTry             = product platform and commercial system
-VisuTry Try-On SDK  = reusable face, recommendation, and try-on capability layer
-VisuTry Mobile      = camera-first mobile surface using platform APIs and SDK capabilities
-```
+The SDK's AR path renders a 3D frame against tracked face geometry. Hosted AI image generation uses
+separate server workflows and provider integrations. A working AR reference demo does not establish
+the reliability, cost, or availability of hosted generation.
 
----
+### Estimates and physical fit
 
-## 3. What the SDK Owns
+Geometry confidence and recommendation scores are heuristics. Size estimates depend on assumptions
+and image geometry; they are not calibrated pupillary-distance measurements, prescriptions, or
+proof of physical frame fit. The reference GLB demonstrates the technical pipeline and is not a
+digitized retail product.
 
-The SDK should own stable, reusable, platform-aware capability primitives.
+## Audiences
 
-Current and intended ownership:
+| Audience                          | Intended value                                                             | Current adoption evidence                                                             |
+| --------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| VisuTry Web                       | Reuse shared geometry and analysis through an explicit migration contract. | [Main-site status](integration-status.md).                                            |
+| VisuTry Mobile                    | Use browser adapters and shared algorithms in a camera-first application.  | [Mobile status](integration-status.md).                                               |
+| WeChat and future app surfaces    | Reuse core rules through platform-specific input and rendering adapters.   | WeChat is experimental; native app adapters are not established by this repository.   |
+| Merchant and embedded experiences | Consume visual primitives without duplicating commerce or tenant rules.    | Planned uses, not claims of verified deployment.                                      |
+| External developers               | Inspect, build, integrate, and contribute to a documented MIT project.     | Public source and contribution workflow; package and platform limits remain explicit. |
 
-- face geometry types and utilities;
-- MediaPipe / landmark integration;
-- face-shape analysis algorithm;
-- geometric measurements and ratios;
-- confidence scoring;
-- landmark mesh overlays;
-- glasses recommendation logic;
-- normalized glasses asset manifest;
-- AR glasses try-on rendering;
-- pose solving;
-- smoothing and quality gating;
-- Web / H5 adapter;
-- WeChat Mini Program adapter;
-- testable algorithmic behavior shared across product surfaces.
+## Open-source and discovery goals
 
-The SDK should be narrow and excellent.
+Open-source distribution is a current project goal, supported by the MIT license, public source,
+package structure, documentation, and contribution process. It is not deferred until every internal
+application has migrated.
 
-It should focus on:
+Useful examples and accurate technical documentation should help developers and brands discover and
+evaluate the project, including through search and AI discovery. These are intended outcomes, not
+measured growth claims. SDK adoption, relevant referrals, and working integrations are stronger
+evidence than badges or repository traffic alone.
 
-```text
-face analysis + eyewear recommendation + AR / try-on capability
-```
+Product landing pages, editorial SEO/GEO work, pricing, and lead conversion remain owned by the
+VisuTry applications. This repository owns clear technical content and truthful links to those
+products. Publishing documentation does not guarantee rankings, AI citations, or commercial demand.
 
----
+No separate SDK licensing business model is established by this document. Any future commercial
+support or hosted offering must have its own explicit scope and terms.
 
-## 4. What the SDK Does Not Own
+## Operating principles
 
-The SDK should not own the commercial system.
+1. **One implementation for each shared rule.** New adapters and migrations consume core packages;
+   an algorithm port is not a completed shared-core integration.
+2. **Platform-neutral algorithms, platform-specific adapters.** Camera APIs, model loading, canvas,
+   and presentation belong at the adapter boundary.
+3. **Explicit current state.** Distinguish source availability, automated evidence, deployment,
+   package publication, consumer adoption, and physical-device acceptance.
+4. **Local processing with honest limits.** The SDK does not upload faces, but it loads runtime
+   assets and returns data to its host. Privacy configuration is not a sandbox around host code.
+5. **Versioned behavior.** Changes to geometry definitions, thresholds, warnings, or rankings require
+   compatibility evidence and release notes.
+6. **English documentation.** README files, guides, public API explanations, roadmap entries, and
+   project-facing issue and pull-request text use English.
 
-Out of scope:
+## Execution
 
-- user authentication;
-- user accounts;
-- Stripe payments;
-- credits and quota logic;
-- product pricing;
-- SEO pages;
-- blog/content strategy;
-- dashboard history;
-- merchant dashboard;
-- lead capture;
-- B2B pilot workflow;
-- product roadmap priority;
-- customer support flow;
-- app-store / Shopify / WooCommerce commercial distribution.
+The [architecture contract](architecture.md) defines package ownership and shared-core rules.
+[Integration status](integration-status.md) records observed state and evidence. The
+[roadmap](roadmap.md) sequences the work and defines acceptance criteria. These documents must stay
+linked; product aspirations must not silently become claims of shipped integration.
 
-Those belong to the main VisuTry platform or future platform-specific products.
+## Revision history
 
----
-
-## 5. Primary Consumers
-
-The SDK should serve these consumers:
-
-| Consumer | How it uses the SDK |
-| --- | --- |
-| VisuTry Web | Face shape detector, local / on-device analysis, possible future recommendation and AR capability. |
-| VisuTry Mobile | Camera-first face analysis, mobile try-on, future mini-program adaptation. |
-| Future WeChat Mini Program | Uses platform-neutral core plus WeChat adapter. |
-| Future Store / Widget | May use SDK capabilities for local face analysis, recommendation, and try-on where appropriate. |
-| External developers | Possible later audience if the SDK is intentionally packaged and documented for public use. |
-
----
-
-## 6. Product Principles
-
-### 6.1 On-device first
-
-Face images, video frames, and landmarks should stay on device by default.
-
-If a product surface uploads images to the VisuTry platform for generation or storage, that behavior should be explicit and owned by that product surface, not hidden inside the SDK.
-
-### 6.2 Core / adapter separation
-
-Core algorithmic logic should remain platform-independent.
-
-Adapters should handle platform-specific APIs such as browser camera, canvas, WebGL, WeChat runtime, or mobile shell constraints.
-
-### 6.3 Numerical consistency
-
-Where VisuTry Web and Mobile use the SDK for face analysis, results should remain consistent enough for product decisions and user trust.
-
-Breaking changes to face-shape scoring, geometry definitions, or recommendation rules should be versioned and documented.
-
-### 6.4 Capability, not business workflow
-
-The SDK should expose capabilities. It should not decide commercial workflow.
-
-For example:
-
-- SDK can analyze a face shape.
-- SDK should not decide whether the user has enough credits.
-- SDK can recommend frames based on geometry and preferences.
-- SDK should not decide how a merchant lead is captured.
-
----
-
-## 7. Interface Direction
-
-The SDK should expose capabilities in a way that can be used by Web, Mobile, and future platform adapters.
-
-Representative capability groups:
-
-```text
-analyzeFaceShape()
-extractFaceGeometry()
-recommendFrames()
-startTryOn()
-loadGlasses()
-snapshot()
-renderLandmarks()
-```
-
-Future capability direction may include:
-
-```text
-compareFrameFit()
-scoreFrameForFace()
-normalizeFrameManifest()
-validateFrameAsset()
-```
-
-Do not add account, billing, payment, or merchant concepts into SDK APIs.
-
----
-
-## 8. Integration with Main Platform
-
-The main VisuTry platform may call or embed SDK capabilities, but platform-owned concerns should stay in the platform.
-
-| Concern | Owner |
-| --- | --- |
-| Face geometry algorithm | SDK |
-| Face-shape scoring | SDK |
-| AR rendering | SDK |
-| Credits / quota | Main platform |
-| Stripe checkout | Main platform |
-| Saved history | Main platform |
-| Merchant validation | Main platform |
-| SEO/GEO | Main platform |
-| Mobile camera UX | Mobile app |
-
----
-
-## 9. Roadmap Boundaries
-
-### Near term
-
-- Keep SDK focused on face geometry, face analysis, recommendation, AR try-on, and platform adapters.
-- Maintain test coverage and API stability.
-- Ensure VisuTry Web and Mobile can consume the same stable capabilities.
-
-### Medium term
-
-- Improve recommendation and frame asset validation.
-- Align SDK outputs with VisuTry product surfaces and reports.
-- Support mini-program adaptation through clean adapter boundaries.
-
-### Long term
-
-- Consider public developer-facing SDK packaging only after internal product surfaces prove stable usage.
-- Avoid over-expanding into business workflows that belong to VisuTry platform or merchant products.
-
----
-
-## 10. Related Repositories
-
-- `franksunye/VisuTry` — main product platform and commercial source of truth.
-- `franksunye/visutry-mobile` — camera-first mobile surface using platform APIs and SDK capabilities.
-
----
-
-## 11. Change Log
-
-| Date | Change |
-| --- | --- |
-| 2026-07-08 | Created SDK product positioning and scope boundary document. |
+| Date       | Change                                                                                                                    |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------- |
+| 2026-07-08 | Initial SDK positioning and commercial boundary.                                                                          |
+| 2026-11-21 | Clarified shared-core adoption, external open-source use, product boundaries, discovery goals, and evidence-based status. |

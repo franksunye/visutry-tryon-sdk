@@ -12,7 +12,8 @@ import { MAX_TILT_DEG, MAX_SYMMETRY_OFFSET, MIN_FACE_SPAN } from "./constants.js
 export const FACE_SHAPE_SCORER_VERSION = "0.2.0";
 
 /**
- * All canonical face shapes, in the same order as visutry's CANONICAL_FACE_SHAPES.
+ * SDK canonical order, also used to resolve equal scores deterministically.
+ * A consuming application's independently maintained order may differ.
  */
 const CANONICAL_SHAPES: FaceShape[] = [
   "oval",
@@ -34,7 +35,7 @@ function round(value: number, digits = 3): number {
 }
 
 /**
- * Build geometry signals — exact port of visutry's buildGeometrySignals().
+ * Build geometry signals, originally ported from VisuTry's buildGeometrySignals().
  */
 function buildGeometrySignals(
   shape: FaceShape,
@@ -91,7 +92,7 @@ function computeAllScores(ratios: NonNullable<FaceMetrics["visutry"]>): Record<s
 }
 
 /**
- * classifyFaceGeometry — exact port of visutry's classifyFaceGeometry().
+ * classifyFaceGeometry, originally ported from VisuTry's classifier.
  *
  * Uses integer if/else scoring on three key ratios:
  *   - faceAspectRatio (H/W, 2D)
@@ -136,12 +137,13 @@ function classifyFaceGeometry(ratios: NonNullable<FaceMetrics["visutry"]>): {
 /**
  * Scores face shapes from geometric metrics.
  *
- * v0.2.0: Exact port of visutry's classifyFaceGeometry algorithm.
- * Uses if/else integer scoring on 2D ratios — not bell/softmax.
- * This ensures numerical equivalence with visutry's main site.
+ * The v0.2.0 baseline was ported from VisuTry's classifyFaceGeometry algorithm.
+ * It uses if/else integer scoring on 2D ratios, not bell/softmax functions.
+ * Historical provenance does not establish parity with the current main site;
+ * compare exact source revisions and normalized fixtures before claiming it.
  *
- * Future enhancements (bell functions, softmax, chinType, multi-frame)
- * can be layered on top of this known-good baseline.
+ * Changes to scoring functions, chin interpretation, or frame aggregation
+ * require explicit compatibility decisions and regression evidence.
  */
 export class FaceShapeScorer {
   private readonly metricsCalculator: FaceMetricsCalculator;
@@ -169,7 +171,7 @@ export class FaceShapeScorer {
 
     const v = metrics.visutry;
 
-    // --- Quality gates (exact match to visutry's analyzeFaceLandmarks) ---
+    // --- SDK quality gates; consumer parity requires separate verification ---
     const MAX_TILT = MAX_TILT_DEG;
     const MAX_SYMMETRY = MAX_SYMMETRY_OFFSET;
     const MIN_SPAN = MIN_FACE_SPAN;
@@ -196,7 +198,7 @@ export class FaceShapeScorer {
       return this.unknownResult(metrics, allWarnings);
     }
 
-    // --- Classify using visutry's exact algorithm ---
+    // --- Classify using the SDK's versioned scoring rules ---
     const result = classifyFaceGeometry(v);
 
     // --- Build candidates list ---
@@ -255,7 +257,7 @@ export class FaceShapeScorer {
   // -----------------------------------------------------------------------
 
   /**
-   * Get raw integer scores for all 7 shapes — same as visutry's scoring.
+   * Get raw integer scores for all 7 shapes using the shared SDK scoring function.
    */
   private getAllScores(v: NonNullable<FaceMetrics["visutry"]>): Record<string, number> {
     return computeAllScores(v);
