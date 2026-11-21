@@ -15,6 +15,23 @@ The SDK is the intended shared visual foundation of the VisuTry product system. 
 architectural direction, not a claim that every existing application already imports the SDK.
 [Integration status](integration-status.md) records the current adoption evidence.
 
+## Current operating decision: develop the SDK independently
+
+The product owner's 2026-11-21 decision is to preserve the stable main site's
+existing algorithms. Main-site work remains focused on operations and improving
+access and the visitor experience. SDK development does not authorize an
+algorithm rewrite, dependency switch, or automatic backport into that site.
+
+Develop and qualify the SDK independently for a period first: improve analysis
+quality, reusable contracts, examples, developer experience and supported adapters.
+Then evaluate demonstrated benefits and integration costs. Only after that review
+should a separately approved replacement/cutover plan be considered. Passing tests
+or reducing code duplication alone is not a decision to migrate a stable product.
+
+Standalone development is compatible with the long-term shared-foundation goal;
+it does not create a separate SDK licensing business or require immediate adoption
+by existing VisuTry products.
+
 ## Relationship to the product platform
 
 VisuTry remains a platform for both consumers and merchants. Consumer products help people discover
@@ -52,10 +69,11 @@ the reliability, cost, or availability of hosted generation.
 
 ### Estimates and physical fit
 
-Geometry confidence and recommendation scores are heuristics. Size estimates depend on assumptions
-and image geometry; they are not calibrated pupillary-distance measurements, prescriptions, or
-proof of physical frame fit. The reference GLB demonstrates the technical pipeline and is not a
-digitized retail product.
+Geometry confidence and recommendation scores are heuristics. In 0.3.0, physical
+sizing rules require explicit measured or calibrated host input; normalized image
+geometry does not produce millimeters. These rules are not prescriptions or proof
+of physical frame fit. The reference GLB demonstrates the technical pipeline and
+is not a digitized retail product.
 
 ## Audiences
 
@@ -87,8 +105,9 @@ support or hosted offering must have its own explicit scope and terms.
 
 ## Operating principles
 
-1. **One implementation for each shared rule.** New adapters and migrations consume core packages;
-   an algorithm port is not a completed shared-core integration.
+1. **One implementation for each SDK rule.** New SDK adapters and approved migrations consume
+   core packages. The stable main site's existing implementation remains intentional during the
+   standalone phase; an algorithm port is not a completed integration or migration authorization.
 2. **Platform-neutral algorithms, platform-specific adapters.** Camera APIs, model loading, canvas,
    and presentation belong at the adapter boundary.
 3. **Explicit current state.** Distinguish source availability, automated evidence, deployment,
