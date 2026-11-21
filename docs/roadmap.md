@@ -26,33 +26,37 @@ Completion requires:
 
 Documentation completion does not change runtime capability or complete the stages below.
 
-## 2. Converge the main site's local detector on the shared core
+## 2. Develop and qualify the SDK independently
 
-- **Priority:** Next
-- **Owner:** SDK and main-site maintainers
-- **Dependency:** The architecture and integration baseline in stage 1.
+- **Priority:** Current development phase
+- **Owner:** SDK maintainers
+- **Decision:** The stable main-site algorithms remain unchanged. Existing-site work focuses on
+  operations and access/visitor improvements; it does not include SDK replacement.
 
 The 0.3.0 implementation and local compatibility evidence are recorded in
 [integration status](integration-status.md#030-implementation-and-migration-gate).
-Package publication, the pinned application dependency and deployed acceptance
-must still be recorded before this stage is complete.
+The candidate main-site adapter is retained only as assessment material; its PR
+was closed without merging. There is no active cutover schedule.
 
-1. Inventory the two classifiers and warning/geometry definitions at exact revisions.
-2. Build a small, representative parity corpus, including boundary and invalid-input cases.
-3. Decide each observed mismatch deliberately; do not assume either implementation is correct
-   merely because it shipped first.
-4. Implement the thin main-site adapter over the versioned SDK core or analyzer entry point,
-   choosing the least runtime/bundle impact for the existing application.
-5. Remove active duplicate rules after acceptance and record deployed adoption evidence.
+1. Refine detection/geometry/analysis quality and explicit rejected-result behavior using
+   reproducible fixtures, representative images and named runtime/device conditions.
+2. Stabilize public contracts, versioned behavior, lifecycle handling and package installation.
+3. Improve standalone examples and documentation so developers and brands can integrate the
+   supported capabilities without relying on the VisuTry main application.
+4. Demonstrate reuse in isolated examples or separately approved prototypes. Do not use a stable
+   production application as the default test vehicle.
+5. Record integration effort, runtime/bundle impact, maintenance cost, working adoption and
+   relevant discovery/referral evidence. Repository traffic or passing tests alone is insufficient.
 
-Acceptance is defined by [the shared-core contract](architecture.md#completion-criteria): one active
-implementation, versioned inputs/outputs, approved behavior, measured load impact, application-path
-verification, and a rollback route. Paid AI reports, billing, and hosted image generation remain
-outside this migration.
+After a period of independent development, assess whether measured quality and reuse benefits
+justify migration cost and risk. A main-site replacement/cutover plan comes only after that
+assessment and an explicit owner decision. That later plan must cover compatibility, staged
+acceptance, observation and rollback under the [architecture contract](architecture.md#completion-criteria).
+No SDK algorithm change is automatically backported to the main site.
 
 ## 3. Make Mobile consumption reproducible
 
-- **Priority:** Alongside or immediately after the shared-core contract is proven
+- **Priority:** Later, following standalone qualification and a separately approved integration
 - **Owner:** Mobile and SDK maintainers
 
 - Reconcile the pinned SDK submodule, workspace dependencies, and build instructions into a

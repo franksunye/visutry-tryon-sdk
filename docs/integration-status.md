@@ -9,6 +9,18 @@ This document records adoption evidence. [Architecture](architecture.md) defines
 
 ## 0.3.0 implementation and migration gate
 
+**Main-site replacement: HOLD by owner decision on 2026-11-21.** The existing
+main-site algorithms remain unchanged while the SDK develops independently.
+Evaluate actual benefits first, then consider a separately approved cutover plan.
+Main-site operations and visitor-access improvements are a separate workstream.
+
+The candidate [main-site PR #547](https://github.com/franksunye/VisuTry/pull/547)
+is closed and unmerged; its branch is retained for assessment only. The verified
+main branch remains `66381dc7d7ccd053414a1c9069355c3ecef3e21c`, and
+`www.visutry.com` still points to production deployment
+`dpl_HRTKFeDEHicexj3mND9y15Rt2KE9` / source
+`23a1ffdd15a3a00e572ed856cbd0d18b75752a78`. No main-site SDK switch was deployed.
+
 The 0.3.0 source implements aspect-aware 2D geometry, canonical main-site rounding
 and tie order, explicit invalid-input/quality rejection, and a DOM-free public
 contract. Recommendations no longer derive physical dimensions from normalized
@@ -26,10 +38,23 @@ boundaries. The matched browser entry grows by approximately 3.6 KB gzip and add
 only core, with no runtime/peer dependencies. This is an entry-level bundle
 comparison, not the complete Next.js production bundle.
 
-Registry publication, the application's exact dependency/lockfile, its full CI,
-deployment and live acceptance remain separate gates. This source update does
-not by itself mark the main-site migration complete. The snapshot below records
-the pre-migration state and must not be read as a description of 0.3.0 behavior.
+SDK [PR #6](https://github.com/franksunye/visutry-tryon-sdk/pull/6) was merged as
+`df6190a8b4f179475467fe47c96cd237f73de62e` and tagged `v0.3.0`.
+[Release 44887042698](https://github.com/franksunye/visutry-tryon-sdk/actions/runs/44887042698)
+published all four packages with provenance and pinned registry dependencies.
+The [API docs deployment](https://github.com/franksunye/visutry-tryon-sdk/actions/runs/44887042756)
+succeeded. SDK checks passed 482 unit tests and
+[eight real Chromium tests](https://github.com/franksunye/visutry-tryon-sdk/actions/runs/44886847999).
+
+The independent [reference demo](https://visutry-sdk-demo.vercel.app) was updated
+to that source as `dpl_GdpKuPRGrzp61Bxy4vTtsHZ6qQZL`, with 17 anonymous resource
+requests and runtime/reference-asset hash checks passing. Physical-device and
+retail-fit qualification remain open.
+
+The candidate application's fresh CI jobs installed the published package, but
+that evidence is not migration approval. Full application acceptance and live
+cutover are not established. The historical snapshot below must not be read as
+a description of 0.3.0 behavior or as a reason to replace the stable site.
 
 ## Pre-migration inspected revisions
 
