@@ -15,7 +15,8 @@ import {
  * normalized image coordinates. We convert it using the calibration constant
  * `MM_PER_NORM = 140 / 0.3` (see `constants.ts`). When the metric is missing or
  * invalid we fall back to the population average (140mm) so downstream sizing
- * never breaks.
+ * never breaks. The fixed conversion is a heuristic assumption, not a
+ * subject-specific calibration or a physical fitting measurement.
  */
 export function estimateFaceWidthMm(metrics: FaceMetrics): number {
   const norm = metrics?.faceWidth;
@@ -30,7 +31,8 @@ export function estimateFaceWidthMm(metrics: FaceMetrics): number {
  * same calibration factor as {@link estimateFaceWidthMm}. Falls back to ~63mm.
  *
  * Used as a supplementary signal (e.g. flagging lenses wider than the inter-eye
- * distance) — it does not drive the size tier on its own.
+ * distance) — it does not drive the size tier on its own and is not a measured
+ * pupillary distance.
  */
 export function estimateEyeCenterDistanceMm(metrics: FaceMetrics): number {
   const norm = metrics?.eyeCenterDistance;

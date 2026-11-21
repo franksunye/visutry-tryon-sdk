@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.base.json",
+  "include": [
+    "packages/core/src/**/*.ts",
+    "packages/web/src/**/*.ts",
+    "packages/recommender/src/**/*.ts",
+    "packages/wechat/src/**/*.ts"
+  ],
+  "exclude": ["node_modules", "**/dist", "**/*.test.ts", "**/*.spec.ts"]
+}

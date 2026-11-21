@@ -27,10 +27,12 @@ What actually happened.
 
 ## Environment
 
-- SDK version: [e.g., 0.2.0]
+- Exact package version and source commit, if using a checkout:
 - Package: [e.g., @visutry/tryon-web]
-- Browser: [e.g., Chrome 120, Safari 17]
-- OS: [e.g., macOS 14, Windows 11]
+- Browser and version:
+- OS and physical device, or emulator/viewport:
+- Integration path: photo analyzer, Web AR, core, recommender, or WeChat:
+- Runtime/model version and asset origin, when relevant:
 
 ## Reproduction Code
 
@@ -40,4 +42,7 @@ What actually happened.
 
 ## Additional Context
 
-Any other context, logs, or screenshots.
+Include relevant error messages and whether the issue occurs in a clean source checkout or a
+published package. Use English for the report. Share a permitted test fixture or a minimal
+reproduction instead of private face images or raw personal data. Report security issues through
+the security policy rather than this public template.

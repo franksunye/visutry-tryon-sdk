@@ -1,42 +1,50 @@
-# Security Policy
+# Security policy
 
-## On-Device Processing
+## Processing and privacy boundary
 
-VisuTry is designed with an **on-device-first** privacy contract. Face images, video frames, and landmark data are processed locally in the browser or on the device. By default, no face data is transmitted to any server.
+The SDK's implemented face-processing paths run locally. The SDK does not implement a transport
+that uploads face images, frames, landmarks, or geometry. Model/WASM downloads and glasses-asset
+requests still use the network unless those assets are already locally available.
 
-The `PrivacyGuard` API (`@visutry/tryon-core`) enforces this contract at runtime:
+`PrivacyGuard` is a policy helper, not a network sandbox. Its upload-policy methods return `false`,
+but it cannot intercept arbitrary requests made by a host application or remove data the application
+already received. The current Web facade enforces its snapshot permission check. It does not expose
+a public `sdk.privacy` property, and there is no `redactLandmarks` option.
 
-- `processOnDeviceOnly: true` — prevents any network transmission of face data
-- `allowSnapshotExport: false` — disables screenshot/snapshot functionality
-- `redactLandmarks: true` — strips raw landmark coordinates from results
+Current defaults are:
 
-## Reporting a Vulnerability
+- `processOnDeviceOnly: true`;
+- `allowSnapshotExport: true`;
+- `allowAnalytics: false`;
+- `analyticsLevel: "none"`.
 
-If you discover a security vulnerability in VisuTry SDK, please report it responsibly:
+Set `allowSnapshotExport: false` when constructing the Web SDK if exports must be blocked. The
+image analyzer returns landmarks to its caller, and WeChat does not share the Web facade's privacy
+configuration. Host applications own consent, access to returned data, uploads, logs, and retention.
+See [the privacy guide](docs/privacy.md) for exact behavior and enforcement limits.
 
-1. **Do not** open a public GitHub issue
-2. Email security@visutry.com with a description of the vulnerability and reproduction steps
-3. You will receive an acknowledgment within 48 hours
-4. We will investigate and provide a fix timeline within 7 days
+## Reporting a vulnerability
 
-## Scope
+Email **security@visutry.com** with a description, affected package/source revision, impact, and a
+minimal reproduction. Do not post an undisclosed vulnerability or private face data in a public
+issue. Maintainers will assess the report and coordinate the response and disclosure.
 
-The following are considered security vulnerabilities:
+Relevant reports include camera access outside the documented lifecycle, unintended data
+transmission, bypass of an implemented export restriction, asset-loading vulnerabilities, and
+exploitable dependency problems. Reports are welcome for every package, including experimental
+adapters; experimental status is not a reason to ignore a security defect.
 
-- Bypass of the `PrivacyGuard` on-device-only contract
-- Unauthorized access to camera streams or face data
-- XSS vectors in the SDK's canvas or DOM rendering
-- Supply chain risks (dependency vulnerabilities with known CVEs)
+For ordinary usage questions, feature requests, and performance reports, use
+[GitHub Issues](https://github.com/franksunye/visutry-tryon-sdk/issues).
 
-The following are **not** security vulnerabilities:
+## Version scope
 
-- Issues with the WeChat Mini Program adapter (experimental, not production-ready)
-- Performance issues or feature requests
-- Questions about usage (use GitHub Discussions)
+The repository currently develops the 0.2.x package line. Include the exact package version and,
+when using repository source, the full commit SHA in a report. An old version may require an upgrade;
+a version number alone does not establish that a security fix has been published or adopted.
 
-## Supported Versions
+## Dependencies and assets
 
-| Version | Supported |
-|---------|-----------|
-| 0.2.x   | Yes       |
-| < 0.2   | No        |
+Use locked dependencies and verified asset provenance. Preserve third-party licenses and notices.
+Do not disable TLS or integrity checks to make runtime/model loading succeed. Consult the
+[reference-release procedure](docs/SDK_REFERENCE_RELEASE.md) when replacing shipped runtime assets.

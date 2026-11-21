@@ -416,8 +416,9 @@ export interface FaceMetrics {
   chinType: "pointed" | "rounded" | "square" | "unknown";
   measurementQuality: number;
   /**
-   * visutry-compatible ratios (2D distances, no z-component).
-   * These match the exact computation from visutry's analyzeFaceLandmarks().
+   * Ratios inherited from the VisuTry geometry model (2D distances, no z-component).
+   * Names describe the SDK contract; parity with another application must be
+   * verified against its exact revision and normalized inputs.
    */
   visutry?: {
     faceAspectRatio: number;
@@ -458,6 +459,7 @@ export interface FaceShapeCandidate {
   reasons: string[];
 }
 
+/** Heuristic geometry classification; confidence is not a calibrated probability. */
 export interface FaceShapeResult {
   primary: FaceShape;
   candidates: FaceShapeCandidate[];
@@ -569,6 +571,7 @@ export interface SDKError {
 // 16. Privacy
 // ---------------------------------------------------------------------------
 
+/** Policy settings; enforcement depends on the consuming facade or host code. */
 export interface PrivacyConfig {
   processOnDeviceOnly: true;
   allowSnapshotExport?: boolean;
@@ -615,7 +618,7 @@ export interface VisuTrySDK {
   destroy(): void;
 }
 
-/** Configuration passed to the platform SDK factory (web / wechat). */
+/** Base configuration used by the Web SDK factory; WeChat has its own WechatSDKConfig. */
 export interface VisuTrySDKConfig {
   camera?: CameraConfig;
   tracker?: TrackerConfig;

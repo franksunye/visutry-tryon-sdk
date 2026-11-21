@@ -115,7 +115,7 @@ export class FaceMetricsCalculator {
 
     // --- visutry-compatible 2D ratios -------------------------------------
     // visutry uses 2D distances (Math.hypot(dx, dy) with no z-component).
-    // We compute these separately to ensure exact numerical equivalence.
+    // Compute these separately for the SDK's historical ratio contract.
     const visutry = this.computeVisutryRatios(s);
 
     return {
@@ -285,7 +285,8 @@ export class FaceMetricsCalculator {
 
   /**
    * Compute visutry-compatible ratios using 2D distances.
-   * This mirrors visutry's analyzeFaceLandmarks() exactly:
+   * These fields inherit the VisuTry geometry vocabulary. The implementation
+   * uses normalized coordinates; it does not apply source-image aspect scaling:
    *   - faceAspectRatio = faceHeight / faceWidth (H/W, 2D)
    *   - cheekToFaceWidth = cheekWidth / faceWidth
    *   - jawToCheekWidth = jawWidth / cheekWidth
@@ -301,9 +302,9 @@ export class FaceMetricsCalculator {
       s.noseLeft, s.noseRight, s.noseBridge];
     if (required.some((p) => !p)) return undefined;
 
-    // 2D distances — visutry multiplies by imageWidth/imageHeight but since
-    // these are ratios, the scaling cancels out. We compute with normalized
-    // coordinates directly.
+    // Distances use normalized coordinates directly. Different horizontal and
+    // vertical image scales do not generally cancel in these ratios; compare
+    // aspect-aware consumer calculations before claiming numerical parity.
     const faceHeight = this.safeDistance2D(s.foreheadCenter!, s.chin!)!;
     const faceWidth = this.safeDistance2D(s.leftFace!, s.rightFace)!;
     const cheekWidth = this.safeDistance2D(s.leftCheek!, s.rightCheek)!;
