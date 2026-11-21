@@ -40,10 +40,19 @@ sequence as a real `getUserMedia` video source. The crop makes the face large
 enough for repeatable landmark detection; it does not represent head motion or
 multiple face/lighting cases. The generated Y4M remains outside the repository.
 
-The default uses Playwright's installed Chromium. For a local system browser,
+The default uses Playwright's installed full Chromium in new headless mode
+(`channel: "chromium"`) with a simulated media-permission UI for the file-backed
+device. Native `getUserMedia`, video playback, MediaPipe, and WebGL still run;
+only the permission-error case deliberately injects one `NotAllowedError`.
+For a local system browser,
 add `PLAYWRIGHT_EXECUTABLE_PATH=/usr/bin/chromium`. The config fails immediately
 if `VISUTRY_FAKE_VIDEO` is absent or not an existing absolute path; no test skips
 or CDN-failure passes are used.
+
+On failure, the gate attaches `browser-diagnostics.json` and prints the native
+camera/playback stage and original error name/message in CI logs. It fails
+immediately when the demo enters its error state instead of waiting for the
+initialization timeout.
 
 ## What the gate verifies
 

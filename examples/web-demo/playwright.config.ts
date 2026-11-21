@@ -22,6 +22,9 @@ export default defineConfig({
   reporter: [["list"], ["html", { open: "never" }]],
   use: {
     baseURL: "http://127.0.0.1:5173",
+    // Full Chromium's new headless mode supplies the browser media delegate;
+    // the default headless shell does not implement the same permission UI.
+    channel: "chromium",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     permissions: ["camera"],
@@ -30,6 +33,7 @@ export default defineConfig({
       ...(executablePath ? { executablePath } : {}),
       args: [
         "--use-fake-device-for-media-stream",
+        "--use-fake-ui-for-media-stream",
         `--use-file-for-fake-video-capture=${fakeVideo}`,
         "--use-angle=swiftshader",
         "--enable-unsafe-swiftshader",

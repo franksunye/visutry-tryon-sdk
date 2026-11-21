@@ -6,35 +6,106 @@ interface CameraAudit {
   requests: number;
   streams: MediaStream[];
   denyNext: boolean;
+  events: Array<{
+    operation: "getUserMedia" | "play";
+    outcome: "start" | "success" | "error" | "injected-error";
+    name?: string;
+    message?: string;
+    trackCount?: number;
+  }>;
 }
 declare global {
   interface Window { __cameraAudit: CameraAudit }
 }
 type RendererWindow = Window & { __rendererQa: RendererQa };
+const browserMessages = new WeakMap<Page, string[]>();
+
+test.beforeEach(async ({ page }) => {
+  const messages: string[] = [];
+  browserMessages.set(page, messages);
+  page.on("console", (message) => {
+    if (message.type() === "error" || message.type() === "warning") messages.push(`${message.type()}: ${message.text()}`);
+  });
+  page.on("pageerror", (error) => messages.push(`pageerror: ${error.message}`));
+});
+
+test.afterEach(async ({ page }, testInfo) => {
+  if (testInfo.status === testInfo.expectedStatus) return;
+  const diagnostics = await page.evaluate(() => {
+    const audit = window.__cameraAudit;
+    const video = document.querySelector<HTMLVideoElement>("#camera-video");
+    return {
+      state: document.querySelector<HTMLElement>("#stage")?.dataset.state,
+      message: document.querySelector("#error-message")?.textContent,
+      camera: audit ? {
+        requests: audit.requests,
+        streamCount: audit.streams.length,
+        events: audit.events,
+        tracks: audit.streams.map((stream) => stream.getTracks().map((track) => ({ kind: track.kind, readyState: track.readyState }))),
+      } : null,
+      video: video ? {
+        readyState: video.readyState, width: video.videoWidth, height: video.videoHeight,
+        attached: video.srcObject !== null,
+        error: video.error ? { code: video.error.code, message: video.error.message } : null,
+      } : null,
+    };
+  }).catch((error: unknown) => ({ diagnosticError: String(error) }));
+  const messages = browserMessages.get(page) ?? [];
+  await testInfo.attach("browser-diagnostics.json", {
+    body: Buffer.from(JSON.stringify({ ...diagnostics, messages }, null, 2)), contentType: "application/json",
+  });
+  // Keep the original browser failure visible in CI logs, without requiring
+  // a large trace download. No device IDs, labels, or captured pixels are logged.
+  console.error("Browser failure diagnostics:", JSON.stringify(diagnostics));
+  for (const message of messages.slice(-8)) console.error(message);
+});
 
 async function recordCamera(page: Page, denyFirst = false): Promise<void> {
   await page.addInitScript(({ denyFirst }) => {
-    const audit: CameraAudit = { requests: 0, streams: [], denyNext: denyFirst };
+    const audit: CameraAudit = { requests: 0, streams: [], denyNext: denyFirst, events: [] };
     window.__cameraAudit = audit;
     const acquire = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
     navigator.mediaDevices.getUserMedia = async (constraints) => {
       audit.requests++;
+      audit.events.push({ operation: "getUserMedia", outcome: "start" });
       // Only this failure-path test injects a permission error. Every success
       // still calls Chromium's real getUserMedia with its file-backed device.
       if (audit.denyNext) {
         audit.denyNext = false;
+        audit.events.push({ operation: "getUserMedia", outcome: "injected-error", name: "NotAllowedError" });
         throw new DOMException("Camera permission denied for recovery test", "NotAllowedError");
       }
-      const stream = await acquire(constraints);
-      audit.streams.push(stream);
-      return stream;
+      try {
+        const stream = await acquire(constraints);
+        audit.streams.push(stream);
+        audit.events.push({ operation: "getUserMedia", outcome: "success", trackCount: stream.getTracks().length });
+        return stream;
+      } catch (error) {
+        audit.events.push({ operation: "getUserMedia", outcome: "error", name: error instanceof Error ? error.name : "unknown", message: error instanceof Error ? error.message : String(error) });
+        throw error;
+      }
+    };
+    const play = HTMLMediaElement.prototype.play;
+    HTMLMediaElement.prototype.play = async function (this: HTMLMediaElement): Promise<void> {
+      if (this.id !== "camera-video") return play.call(this);
+      audit.events.push({ operation: "play", outcome: "start" });
+      try {
+        await play.call(this);
+        audit.events.push({ operation: "play", outcome: "success" });
+      } catch (error) {
+        audit.events.push({ operation: "play", outcome: "error", name: error instanceof Error ? error.name : "unknown", message: error instanceof Error ? error.message : String(error) });
+        throw error;
+      }
     };
   }, { denyFirst });
 }
 
 async function expectTracking(page: Page): Promise<void> {
   const stage = page.locator("#stage");
-  await expect(stage).toHaveAttribute("data-state", "ready", { timeout: 90000 });
+  await expect.poll(() => stage.getAttribute("data-state"), {
+    timeout: 90000, message: "Demo initialization must settle into ready or report its error",
+  }).toMatch(/^(ready|error)$/);
+  expect(await stage.getAttribute("data-state"), `Initialization failed: ${await page.locator("#error-message").textContent()}`).toBe("ready");
   await expect(stage).toHaveAttribute("data-glasses-loaded", "true");
   await expect.poll(async () => Number(await stage.getAttribute("data-pose-count")), {
     timeout: 45000, message: "Actual MediaPipe must emit multiple poses from the camera fixture",
