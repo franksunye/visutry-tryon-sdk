@@ -93,7 +93,7 @@ export interface VisuTryWebSDKFactoryOptions extends VisuTrySDKConfig {
  * `initialize()` to load MediaPipe and set up the renderer, then
  * `startCamera()` / `startTryOn()` to begin tracking.
  */
-export function createVisuTryWebSDK(options: VisuTryWebSDKFactoryOptions): VisuTrySDK {
+export function createVisuTryWebSDK(options: VisuTryWebSDKFactoryOptions): VisuTrySDK<Blob> {
   return new VisuTryWebSDKImpl(options);
 }
 
@@ -101,7 +101,7 @@ export function createVisuTryWebSDK(options: VisuTryWebSDKFactoryOptions): VisuT
 // Implementation
 // ---------------------------------------------------------------------------
 
-class VisuTryWebSDKImpl implements VisuTrySDK {
+class VisuTryWebSDKImpl implements VisuTrySDK<Blob> {
   // --- Composition --------------------------------------------------------
   private readonly camera: WebCameraProvider;
   private readonly tracker: MediaPipeFaceTracker;
@@ -131,6 +131,7 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
   private loopGeneration = 0;
   private loadGlassesPromise: Promise<void> | null = null;
   private analysisInProgress = false;
+  private cancelFrameCollection: ((error: SDKError) => void) | null = null;
 
   // --- Events -------------------------------------------------------------
   private readonly listeners: Map<EventName, Set<(...args: unknown[]) => void>> = new Map();
@@ -263,6 +264,7 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
   stopCamera(): void {
     this.cameraGeneration++;
     this.cameraStartPromise = null;
+    this.cancelFrameCollection?.(createSDKError("UNKNOWN", "Camera analysis was cancelled"));
     this.stopTryOn();
     this.camera.stop();
     this.cameraStarted = false;
@@ -347,7 +349,7 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
   async analyzeFaceShape(input?: FaceAnalysisInput): Promise<FaceShapeResult> {
     this.assertNotDestroyed();
     if (this.analysisInProgress) {
-      throw createSDKError("UNKNOWN", t("error.analysis_in_progress"));
+      throw createSDKError("ANALYSIS_IN_PROGRESS", t("error.analysis_in_progress"));
     }
     this.analysisInProgress = true;
     try {
@@ -362,22 +364,35 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
       const sampleFrames = input?.config?.sampleFrames ?? this.analysisTargetFrames;
       const intervalMs = input?.config?.sampleIntervalMs ?? this.analysisIntervalMs;
       const requireFrontal = input?.config?.requireFrontal ?? true;
+      const cameraGeneration = this.cameraGeneration;
 
       if (!this.cameraStarted) {
         await this.startCamera();
+      }
+      this.assertNotDestroyed();
+      if (cameraGeneration !== this.cameraGeneration) {
+        throw createSDKError("UNKNOWN", "Camera analysis was cancelled");
       }
 
       // Pause the try-on loop to avoid RAF conflicts during analysis.
       const wasTryOnRunning = this.tryOnRunning;
       if (wasTryOnRunning) this.stopTryOn();
+      const pausedLoopGeneration = this.loopGeneration;
 
       try {
         const frames = await this.collectAnalysisFrames(sampleFrames, intervalMs, requireFrontal);
+        this.assertNotDestroyed();
+        if (cameraGeneration !== this.cameraGeneration) {
+          throw createSDKError("UNKNOWN", "Camera analysis was cancelled");
+        }
         const result = this.scorer.scoreFrames(frames);
         this.emit("faceShapeAnalyzed", result);
         return result;
       } finally {
-        if (wasTryOnRunning) await this.startTryOn();
+        if (wasTryOnRunning && !this.destroyed && this.cameraStarted
+          && cameraGeneration === this.cameraGeneration && pausedLoopGeneration === this.loopGeneration) {
+          await this.startTryOn();
+        }
       }
     } finally {
       this.analysisInProgress = false;
@@ -394,35 +409,22 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
    */
   async analyzeFaceShapeFromImage(image: unknown): Promise<FaceShapeResult> {
     this.assertNotDestroyed();
-
-    // Ensure tracker is initialized (loads MediaPipe wasm + model).
-    // detectImage will lazily create the IMAGE-mode landmarker.
-    if (!this.tracker) {
-      throw createSDKError("TRACKER_INIT_FAILED", t("error.tracker_not_initialized"));
+    if (this.analysisInProgress) {
+      throw createSDKError("ANALYSIS_IN_PROGRESS", t("error.analysis_in_progress"));
     }
-
-    const face = await this.tracker.detectImage(image);
-    if (!face) {
-      throw createSDKError("UNKNOWN", "No face detected in the provided image");
+    this.analysisInProgress = true;
+    try {
+      const face = await this.tracker.detectImage(image);
+      this.assertNotDestroyed();
+      if (!face) {
+        throw createSDKError("FACE_NOT_DETECTED", "No face detected in the provided image");
+      }
+      const result = this.scorer.score(face);
+      this.emit("faceShapeAnalyzed", result);
+      return result;
+    } finally {
+      this.analysisInProgress = false;
     }
-
-    // Run quality gate in analysis mode.
-    const gate = this.qualityGate.evaluate({ face, mode: "analysis" });
-
-    // Score from a single frame — the scorer handles single-frame input
-    // by scoring from the face's semantic points directly.
-    const result = this.scorer.scoreFrames([face]);
-
-    // If quality gate produced warnings, append them to the result.
-    if (gate.warnings.length > 0) {
-      const merged = [...new Set([...result.warnings, ...gate.warnings])];
-      const resultWithWarnings = { ...result, warnings: merged };
-      this.emit("faceShapeAnalyzed", resultWithWarnings);
-      return resultWithWarnings;
-    }
-
-    this.emit("faceShapeAnalyzed", result);
-    return result;
   }
 
   /**
@@ -437,17 +439,44 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
   ): Promise<NormalizedFaceResult[]> {
     return new Promise((resolve, reject) => {
       const frames: NormalizedFaceResult[] = [];
+      const cameraGeneration = this.cameraGeneration;
       const startTime = performance.now();
       const maxWaitMs = Math.max(targetCount * intervalMs + 2000, 5000);
       let lastCollected = 0;
       let localRafId: number | null = null;
+      let settled = false;
+
+      const cleanup = (): void => {
+        if (localRafId !== null) cancelAnimationFrame(localRafId);
+        localRafId = null;
+        if (this.cancelFrameCollection === cancel) this.cancelFrameCollection = null;
+      };
+      const cancel = (error: SDKError): void => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(error);
+      };
+      const isCurrent = (): boolean => {
+        if (settled) return false;
+        if (this.destroyed) {
+          cancel(createSDKError("UNKNOWN", t("error.sdk_destroyed")));
+          return false;
+        }
+        if (cameraGeneration !== this.cameraGeneration) {
+          cancel(createSDKError("UNKNOWN", "Camera analysis was cancelled"));
+          return false;
+        }
+        return true;
+      };
+      this.cancelFrameCollection = cancel;
 
       const collect = (): void => {
+        localRafId = null;
+        if (!isCurrent()) return;
         const now = performance.now();
         if (now - startTime > maxWaitMs) {
-          if (localRafId !== null) cancelAnimationFrame(localRafId);
-          localRafId = null;
-          reject(createSDKError("UNKNOWN", t("error.analysis_timeout")));
+          cancel(createSDKError("UNKNOWN", t("error.analysis_timeout")));
           return;
         }
 
@@ -458,6 +487,7 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
         }
 
         this.tracker.detect(frame).then((face) => {
+          if (!isCurrent()) return;
           if (!face) {
             localRafId = requestAnimationFrame(collect);
             return;
@@ -483,15 +513,14 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
 
           frames.push(face);
           if (frames.length >= targetCount) {
-            localRafId = null;
+            settled = true;
+            cleanup();
             resolve(frames);
           } else {
             localRafId = requestAnimationFrame(collect);
           }
         }).catch((err) => {
-          if (localRafId !== null) cancelAnimationFrame(localRafId);
-          localRafId = null;
-          reject(this.toSDKError(err));
+          cancel(this.toSDKError(err));
         });
       };
 
@@ -503,7 +532,7 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
   // Snapshot
   // -----------------------------------------------------------------------
 
-  async snapshot(options?: SnapshotOptions): Promise<SnapshotResult> {
+  async snapshot(options?: SnapshotOptions): Promise<SnapshotResult<Blob>> {
     this.assertNotDestroyed();
 
     // Privacy guard: snapshot export must be explicitly allowed.
@@ -520,7 +549,7 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
     }
   }
 
-  private captureCameraSnapshot(options?: SnapshotOptions): SnapshotResult {
+  private captureCameraSnapshot(options?: SnapshotOptions): SnapshotResult<Blob> {
     const video = this.camera.videoElement;
     if (!this.cameraStarted || !video || video.readyState < 2 || !video.videoWidth || !video.videoHeight) {
       throw createSDKError("SNAPSHOT_FAILED", "A running camera frame is required for a camera snapshot");
@@ -627,6 +656,7 @@ class VisuTryWebSDKImpl implements VisuTrySDK {
     if (this.destroyed) return;
     // Mark first, so pending async work cannot commit successful state/events.
     this.destroyed = true;
+    this.cancelFrameCollection?.(createSDKError("UNKNOWN", t("error.sdk_destroyed")));
     this.cameraGeneration++;
     this.cameraStartPromise = null;
     this.stopTryOn();

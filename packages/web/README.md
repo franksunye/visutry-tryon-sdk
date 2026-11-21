@@ -43,7 +43,7 @@ export async function analyzePhoto(image: HTMLImageElement) {
   await image.decode();
   const analyzer = createVisuTryImageAnalyzer();
   try {
-    return await analyzer.analyzeImage(image); // { result, face }
+    return await analyzer.analyzeImage(image); // { status, result, face }
   } finally {
     analyzer.destroy();
   }
@@ -51,9 +51,18 @@ export async function analyzePhoto(image: HTMLImageElement) {
 ```
 
 `analyzeFaceShapeFromImage(image)` returns only `FaceShapeResult`.
-No detected face rejects the analysis promise; insufficient geometry can produce
-`primary: "unknown"`. Classification is heuristic and does not establish
-equivalence with the separately deployed VisuTry main site.
+In 0.3.0, `analyzeImage` returns `status: "accepted" | "rejected"`. A rejected
+observation retains landmarks and warnings for a retake UI, but its classification
+is always `primary: "unknown"`, zero confidence and no candidates. IMAGE mode
+observes at least two faces so it can reject a group photo.
+
+No detected face rejects with `FACE_NOT_DETECTED`; overlapping calls on one
+analyzer reject with `ANALYSIS_IN_PROGRESS`. Both can be retried. Failed attempts
+clear the previous face result, and destruction prevents late results from being
+returned. Wait for one analysis before starting another and destroy the instance
+when its view is removed. Intrinsic image dimensions, not CSS dimensions, define
+the geometry. Classification remains heuristic; see the
+[0.3.0 migration guide](../../docs/migration-0.3.md).
 
 ## Live camera usage
 

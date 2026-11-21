@@ -68,6 +68,8 @@ describe("WechatFaceTracker", () => {
     const result = await tracker.detect(SAMPLE_FRAME);
     expect(result).not.toBeNull();
     expect(result!.source).toBe("wechat-vk");
+    expect(result!.imageSize).toEqual({ width: SAMPLE_FRAME.width, height: SAMPLE_FRAME.height });
+    expect(result!.faceCount).toBe(1);
 
     // Semantic mapping reuses the MediaPipe index map.
     expect(result!.landmarks.semantic.leftEyeOuter).toEqual({

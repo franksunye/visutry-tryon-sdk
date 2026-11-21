@@ -105,7 +105,7 @@ export class WechatFaceTracker implements IFaceTracker {
     const face = result?.faces?.[0];
     if (!face) return null;
 
-    return this.toNormalizedFaceResult(face, frame.width, frame.height);
+    return this.toNormalizedFaceResult(face, frame.width, frame.height, result.faces.length);
   }
 
   destroy(): void {
@@ -148,6 +148,7 @@ export class WechatFaceTracker implements IFaceTracker {
     face: WechatVKFaceGeometry,
     width: number,
     height: number,
+    faceCount: number,
   ): NormalizedFaceResult {
     const raw = this.extractLandmarks(face);
     const normalized = this.normalizeLandmarks(raw, width, height);
@@ -155,12 +156,15 @@ export class WechatFaceTracker implements IFaceTracker {
     const pose = this.extractPose(face);
     const bbox = this.extractBBox(face, normalized);
     const quality = this.extractQuality(face, normalized);
+    if (faceCount > 1) quality.warnings.push("MULTIPLE_FACES");
 
     const source: FaceResultSource = "wechat-vk";
 
     return {
       source,
       timestamp: Date.now(),
+      imageSize: { width, height },
+      faceCount,
       landmarks: {
         raw,
         normalized,

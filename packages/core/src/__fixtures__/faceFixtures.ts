@@ -3,8 +3,29 @@ import type {
   NormalizedFaceResult,
   Point3D,
   GlassesAssetManifest,
+  ImageSize,
 } from "../types/index.js";
 import { MEDIAPIPE_SEMANTIC_INDEX_MAP } from "../face/FaceSemanticMapper.js";
+
+/** Re-encode the same pixel geometry after uniform resizing or canvas padding. */
+export function reframeSemanticPoints(
+  semantic: FaceSemanticPoints,
+  sourceSize: ImageSize,
+  targetSize: ImageSize,
+  scale = 1,
+  offset = { x: 0, y: 0 },
+): FaceSemanticPoints {
+  const transformed: FaceSemanticPoints = {};
+  for (const key of Object.keys(semantic) as (keyof FaceSemanticPoints)[]) {
+    const point = semantic[key];
+    if (point) transformed[key] = {
+      x: (point.x * sourceSize.width * scale + offset.x) / targetSize.width,
+      y: (point.y * sourceSize.height * scale + offset.y) / targetSize.height,
+      z: point.z,
+    };
+  }
+  return transformed;
+}
 
 /**
  * Build a synthetic `FaceSemanticPoints` representing a specific face shape.
@@ -156,6 +177,8 @@ export function buildFaceResult(
   return {
     source: "mediapipe",
     timestamp: Date.now(),
+    imageSize: { width: 1000, height: 1000 },
+    faceCount: 1,
     landmarks: {
       raw,
       normalized: raw,

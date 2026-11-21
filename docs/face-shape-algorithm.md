@@ -1,21 +1,25 @@
 # Face Shape Analysis Algorithm
 
-This document describes `FaceShapeScorer` version `0.2.0` in this SDK. It is a
+This document describes `FaceShapeScorer` version `0.3.0` in this SDK. It is a
 deterministic geometry heuristic that classifies a face into seven shapes (or
 `unknown`) using semantic landmarks, threshold scores and a score-margin
 confidence formula. The confidence value is not a calibrated probability.
 
 The implementation lives in [FaceMetricsCalculator](../packages/core/src/face/FaceMetricsCalculator.ts)
-and [FaceShapeScorer](../packages/core/src/face/FaceShapeScorer.ts). Algorithm
-versioning is separate from npm package versions. Historical derivation from
-the VisuTry main site does not establish parity with its current implementation;
-see [compatibility and integration](#compatibility-and-integration).
+and [FaceShapeScorer](../packages/core/src/face/FaceShapeScorer.ts), with shared
+acceptance rules in [geometryQuality](../packages/core/src/face/geometryQuality.ts)
+and detector-level checks in [QualityGate](../packages/core/src/quality/QualityGate.ts).
+Algorithm versioning is separate from npm package versions. Version 0.3.0 adopts
+the main site's coordinate scaling, rounding and deterministic tie order;
+cross-product acceptance still requires the evidence described under
+[compatibility and integration](#compatibility-and-integration).
 
 ---
 
 ## Table of Contents
 
 - [Overview](#overview)
+- [Image and Coordinate Contract](#image-and-coordinate-contract)
 - [The 7 Face Shapes](#the-7-face-shapes)
 - [MediaPipe Semantic Index Mapping](#mediapipe-semantic-index-mapping)
 - [Geometric Ratios (2D)](#geometric-ratios-2d)
@@ -38,11 +42,49 @@ The algorithm operates in three stages:
 2. **Metric computation** — `FaceMetricsCalculator` computes general metrics and a separate set of seven 2D ratios under `FaceMetrics.visutry`. The field name records the historical integration lineage.
 3. **Classification** — `FaceShapeScorer` applies integer threshold rules to three ratios and returns the primary shape, confidence and all seven ranked candidates.
 
-The `visutry` ratios use normalized x/y coordinates without z. General metrics
-such as `faceWidth` and `faceHeight` also use 3D distances; they must not be
-substituted for the classifier's 2D ratios. Normalized coordinates do not
-automatically preserve pixel-space ratios or tilt when image width and height
-differ. A matching formula alone is not evidence of matching production output.
+All photo measurements now use 2D geometry. Detector-specific z values are
+ignored. The general length fields and classifier ratios share the same
+aspect-aware geometry; the classifier consumes the canonically rounded
+`visutry` fields. `chinType` remains an auxiliary heuristic and is not an input
+to the three-ratio shape classifier.
+
+## Image and Coordinate Contract
+
+`NormalizedFaceResult.imageSize` supplies the source image's pixel dimensions:
+
+```typescript
+imageSize: { width: 1200, height: 1600 }
+```
+
+Landmarks must describe that same image after the adapter's orientation and
+mirroring transforms: x is divided by image width, y by image height, and the
+origin is the top-left corner with y increasing downward. Browser adapters use
+decoded intrinsic dimensions (`naturalWidth`/`naturalHeight`,
+`videoWidth`/`videoHeight`, or canvas/bitmap dimensions), not CSS display size.
+Core does not infer missing dimensions from a face bounding box.
+
+`imageSize` is optional in the TypeScript interface for existing tracking-only
+adapters, but mandatory for analysis. Missing, non-positive or non-finite
+dimensions produce `geometryValid: false` and `INVALID_IMAGE_SIZE`. No square
+image fallback is applied. `computeFromSemantic(points, imageSize)` has the
+same requirement.
+
+Before measuring, the calculator converts both axes to source-image-width
+units: `x' = x` and `y' = y * imageHeight / imageWidth`. A length of `0.3`
+therefore means 30% of source-image width in this common 2D coordinate system;
+it is not a physical millimeter measurement. All supplied point x/y values must
+be finite. Missing required points reject analysis with `MISSING_KEY_POINTS`;
+non-finite coordinates or degenerate geometry use `INVALID_LANDMARKS`.
+
+Two fields deliberately retain their original axis units:
+
+- `faceSpanX = abs(rightFace.x - leftFace.x)`, as a fraction of image width.
+- `faceSpanY = abs(chin.y - foreheadCenter.y)`, as a fraction of image height.
+
+The legacy `faceSpan` is their maximum for display compatibility. Acceptance
+checks each axis independently. Uniform resizing preserves geometry. Adding
+padding preserves ratios for the same physical pixel geometry but reduces
+image-space spans; enough padding can correctly trigger `FACE_TOO_SMALL`.
 
 ---
 
@@ -87,8 +129,9 @@ The SDK maps MediaPipe landmark indices to semantic points:
 
 ## Geometric Ratios (2D)
 
-All classifier ratios use normalized 2D Euclidean distances
-(`Math.hypot(dx, dy)`) without the z-component:
+All classifier ratios use Euclidean distances in the common 2D scale above,
+equivalent to pixel-space `hypot(dx * imageWidth, dy * imageHeight)` ratios.
+Depth is excluded:
 
 | Ratio                   | Formula                                       | Description                        |
 | ----------------------- | --------------------------------------------- | ---------------------------------- |
@@ -107,6 +150,19 @@ Where:
 - `cheekWidth` = distance(leftCheek, rightCheek)
 - `jawWidth` = distance(leftJaw, rightJaw)
 - `foreheadWidth` = distance(leftForehead, rightForehead)
+
+The required set contains 15 points: forehead center, chin, both face-outline
+points, cheeks, jaw points, forehead-width points, eye outer corners, nose
+wings, and nose bridge. Other semantic points contribute optional measurements
+and coverage quality. Face height, face width, cheek width, and outer-eye
+distance must be positive.
+
+The seven values in `metrics.visutry` are rounded before quality acceptance and
+classification: ratios and symmetry to three decimals, eye-line tilt to one
+decimal. General length fields and top-level tilt/symmetry retain full numeric
+precision. Positive tilt means the right eye corner is lower in image space.
+For example, a measured tilt of 15.04 degrees becomes 15.0 and passes the
+15-degree geometry limit; 15.06 becomes 15.1 and fails.
 
 ---
 
@@ -132,17 +188,31 @@ The classifier uses integer scoring rules on three key ratios: `faceAspectRatio`
 ### Ranking
 
 All seven shapes are ranked by their total integer score. Ties preserve this
-order: `oval`, `round`, `square`, `heart`, `diamond`, `oblong`, `triangle`.
+order: `round`, `square`, `oval`, `heart`, `diamond`, `oblong`, `triangle`.
 The highest-scoring shape becomes `primary`. The public `candidates` array
 contains all seven shapes, including zero-score entries. Each candidate score
 is its raw score divided by `max(highestRawScore, 1)`, rounded to three decimals.
 Candidate scores are relative weights; they are not probabilities and do not
 sum to one.
 
-The internal classifier also computes up to two non-zero alternatives, but
-`FaceShapeResult` does not expose an `alternatives` field. If every raw score is
-zero and no quality check rejects the input, the current tie order selects
-`oval` with confidence `0.58`; the algorithm has no separate zero-score rejection.
+The exported low-level `classifyFaceGeometry(ratios)` function also returns up
+to two non-zero alternatives. `FaceShapeResult` does not expose an
+`alternatives` field. If every raw score is zero and no quality check rejects
+the input, the tie order selects `round` with confidence `0.58`; there is no
+separate zero-score rejection.
+
+### Shared explanations and profiles
+
+`buildGeometrySignals(shape, ratios)` returns the same four explanation strings
+used for each candidate and the primary result's `signals`. Profile helpers
+avoid duplicating display thresholds in application adapters:
+
+- `classifyJawProfile`: `<= 0.78` is tapered, `>= 0.94` is strong, otherwise balanced.
+- `classifyUpperFaceProfile`: `< 0.84` is narrower, `> 0.92` is broad, otherwise balanced.
+
+Both helpers return `null` for non-number or non-finite input. The upper-face
+explanation uses the strict `> 0.92` broad threshold. This does not change the
+separate square-scoring rule's `foreheadToCheekWidth >= 0.9` condition.
 
 ---
 
@@ -163,25 +233,71 @@ confidence `0`.
 
 ## Quality Gates
 
-Missing required semantic points or non-positive face/cheek dimensions prevent
-the calculator from producing `metrics.visutry`; the scorer then returns
-`unknown` with `MISSING_KEY_POINTS`. When ratios exist, it checks:
+### Geometry acceptance
 
-| Check                     | Threshold                                                                   | Warning           |
-| ------------------------- | --------------------------------------------------------------------------- | ----------------- |
-| Face span, when available | `max(abs(rightFace.x - leftFace.x), abs(chin.y - foreheadCenter.y)) < 0.16` | `FACE_TOO_SMALL`  |
-| Eye line tilt             | `abs(eyeLineTiltDeg) > 15°`                                                 | `EXCESSIVE_TILT`  |
-| Symmetry                  | `symmetryOffset > 0.14`                                                     | `ASYMMETRIC_FACE` |
+`FaceMetricsCalculator` writes `geometryValid` and `geometryWarnings` on every
+computed result. `getFaceGeometryWarnings(metrics)` supplies the same rules to
+the scorer; `QualityGate` uses the calculator instead of recomputing geometry.
 
-These conditions return `unknown`. Pre-existing `FACE_TOO_SMALL`,
-`EXCESSIVE_TILT` or `ASYMMETRIC_FACE` warnings supplied to the scorer also cause
-rejection. Other incoming warnings are retained without automatic rejection.
+| Check             | Rejection condition                                         | Warning              |
+| ----------------- | ----------------------------------------------------------- | -------------------- |
+| Image dimensions  | Missing, non-finite or non-positive dimensions              | `INVALID_IMAGE_SIZE` |
+| Semantic coverage | A required point or required ratio/span is absent           | `MISSING_KEY_POINTS` |
+| Numeric geometry  | Non-finite x/y or metrics, or degenerate required distances | `INVALID_LANDMARKS`  |
+| Face spans        | `faceSpanX < 0.16` **or** `faceSpanY < 0.16`                | `FACE_TOO_SMALL`     |
+| Eye line tilt     | `abs(visutry.eyeLineTiltDeg) > 15`                          | `EXCESSIVE_TILT`     |
+| Symmetry          | `visutry.symmetryOffset > 0.14`                             | `ASYMMETRIC_FACE`    |
 
-After a classification passes, tilt above 8 degrees or symmetry offset above
-`0.08` adds a soft warning using the same warning codes. A returned warning
-therefore does not by itself mean the classification is `unknown`; inspect
-`primary`, confidence and warnings together. Adapter-level quality checks may
-add warnings or filter frames separately.
+Span checks use unrounded source-image fractions. Tilt and symmetry checks use
+the rounded canonical values. A rejected observation may retain usable partial
+metrics for diagnostics; `geometryValid` must be checked before using those
+metrics as an accepted geometric measurement. `measurementQuality` reflects
+point coverage and, for batches, stability; it is not a substitute for validity.
+
+### Full detector gate versus metrics-only scoring
+
+The entry points deliberately have different available evidence:
+
+| Entry point                           | Acceptance behavior                                                                                                                                                                                                   |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scoreFromMetrics(metrics, warnings)` | Requires `geometryValid === true`, finite complete ratios and both spans, and no blocking geometry or caller-supplied warnings. It does not invent detector confidence or video stability for a photo-only adapter.   |
+| `score(face)`                         | Runs the full `QualityGate` in analysis mode, then scores geometry.                                                                                                                                                   |
+| `scoreFrames(frames)`                 | Runs the full analysis gate on **every** supplied frame and unions their warnings, then scores the aggregate.                                                                                                         |
+| `classifyFaceGeometry(ratios)`        | Low-level threshold calculation only. Does not check dimensions, spans, face count or detector quality. Throws `RangeError` for invalid numeric ratios; adapters should validate through the calculator/scorer first. |
+
+The full analysis gate also requires a visible face, confidence `>= 0.75`,
+frontal score `>= 0.75`, and stability score `>= 0.7`. Present lighting and
+occlusion scores must be `>= 0.4`; all supplied scores must be finite and within
+their valid ranges. Adapter warnings are blocking. A supplied `faceCount > 1`
+adds `MULTIPLE_FACES`; an invalid supplied count also rejects the observation.
+Absent `faceCount` does not establish that the detector checked for multiple
+people.
+
+Analysis uses the semantic span rules above, not the old 0.25 bounding-box-width
+threshold. Try-on and snapshot retain their separate tracker bounding-box
+rules. A detector may still supply a blocking size or pose warning of its own;
+the full scorer preserves that extra evidence. Thus `geometryValid: true`
+does not guarantee full detector acceptance.
+
+Every rejected classification has `primary: "unknown"`, `confidence: 0`, empty
+`candidates` and empty `signals`. Missing validity markers on legacy hand-built
+metrics are rejected; recalculate them with the actual source dimensions.
+In particular, a low-confidence face cannot retain a valid shape merely
+because its landmarks look geometrically complete.
+
+### Non-blocking photo advice
+
+Soft advice is separate from rejection warnings in 0.3.0:
+
+- `getFaceGeometryAdvisories(ratios)` returns `TILTED_FACE` above 8 degrees and
+  `OFF_CENTER_FACE` above a symmetry offset of 0.08.
+- These codes are not appended to the classification's blocking `warnings`.
+  Applications may map them to retake guidance without invalidating an
+  otherwise accepted result.
+- `computeGeometryQualityScore(ratios)` supplies the main site's heuristic
+  display score: `round(clamp(96 - abs(tilt) * 2.2 - symmetry * 180, 45, 96))`.
+  It returns zero for non-finite inputs. This display score is not measured
+  accuracy and does not replace geometry acceptance.
 
 ---
 
@@ -189,9 +305,16 @@ add warnings or filter frames separately.
 
 For video/camera analysis, metrics from multiple frames are aggregated:
 
-1. Compute per-frame metrics, including the available `visutry` ratio sets.
-2. Take the median of each classifier ratio across those sets. General distances also use medians; general width/height and jaw/cheek ratios are recomputed from their median distances.
-3. Run classification on the aggregated metrics. `scoreFrames` currently carries incoming warnings from the first frame, not a union of every frame's warnings.
+1. Compute each frame's metrics. An invalid geometric sample invalidates the
+   batch; it is not silently removed before aggregation.
+2. Take medians of distances, tilt, symmetry and axis spans. Recompute ratios
+   from aggregate distances and apply the canonical rounding. The aggregate is
+   checked again against the shared geometry rules.
+3. Combine per-frame coverage quality with relative face-width stability for
+   `measurementQuality`, and use a majority vote for the auxiliary `chinType`.
+4. `scoreFrames` unions the full gate warnings from every frame. A later
+   low-confidence, invisible or otherwise rejected sample cannot be hidden by
+   the first frame's good quality or by median aggregation.
 
 This can reduce per-frame variation; it is not an accuracy guarantee. An empty
 frame array returns `unknown`, no candidates and confidence `0`. Web live
@@ -210,7 +333,8 @@ interface FaceShapeResult {
   confidence: number; // 0 for unknown; otherwise 0.58 - 0.93
   metrics: FaceMetrics; // Full metrics including visutry ratios
   warnings: FaceQualityWarning[];
-  version: string; // "0.2.0"
+  signals?: string[]; // Primary-shape explanations; the scorer always writes this
+  version: string; // "0.3.0"
 }
 
 interface FaceShapeCandidate {
@@ -223,6 +347,14 @@ interface FaceShapeCandidate {
 For a rejected classification, `candidates` is empty and `confidence` is zero.
 Accepted classifications include all seven candidates. `metrics` contains the
 full `FaceMetrics` object, not just the three ratios used by the classifier.
+The scorer always includes `signals`; the optional TypeScript field preserves
+compatibility with externally constructed result objects.
+
+The Web image analyzer's `analyzeImage()` returns
+`{ status: "accepted" | "rejected", result, face }`. No-face input is a separate
+recoverable `FACE_NOT_DETECTED` error. Concurrent use of the same analyzer
+rejects with `ANALYSIS_IN_PROGRESS`; a later retry may reuse that analyzer.
+Destroying it prevents pending detections from publishing a late result.
 
 ---
 
@@ -230,7 +362,14 @@ full `FaceMetrics` object, not just the three ratios used by the classifier.
 
 The `FACE_SHAPE_SCORER_VERSION` constant tracks algorithm changes:
 
-- **v0.2.0** — Current threshold scorer, historically ported from VisuTry's `classifyFaceGeometry`. Uses integer scores on 2D ratios. This provenance does not guarantee equivalence with later main-site revisions or differently normalized inputs.
+- **v0.3.0** — Required source dimensions for analysis; common-scale 2D lengths;
+  canonical three-decimal ratios and one-decimal tilt; main-compatible tie
+  order and upper-face explanations; rejection on either small axis; explicit
+  geometry validity; full-gate versus metrics-only entry points; all-frame
+  warning propagation; separate soft advisories; primary result signals.
+- **v0.2.0** — Earlier integer threshold scorer. Used uncorrected normalized
+  x/y ratios, an oval-first tie order, max-axis size acceptance and incomplete
+  quality rejection. Callers must account for these intentional behavior changes.
 - **v1.0.0** — Historical bell-function/softmax implementation on 3D ratios, superseded by the current baseline. These are algorithm identifiers, not the package release sequence.
 
 ## Compatibility and Integration
@@ -262,9 +401,42 @@ import { FaceShapeScorer, type NormalizedFaceResult } from "@visutry/tryon-core"
 
 const scorer = new FaceShapeScorer();
 export function classifyFace(face: NormalizedFaceResult) {
+  // face.imageSize must describe the image used to normalize the landmarks.
+  // This entry point also requires valid detector quality metadata.
   return scorer.score(face);
 }
 ```
+
+For an adapter that owns still-photo detection but has no video stability or
+tracker confidence measurements, use the geometry entry point:
+
+```typescript
+import {
+  FaceMetricsCalculator,
+  FaceShapeScorer,
+  getFaceGeometryAdvisories,
+  type FaceSemanticPoints,
+  type ImageSize,
+} from "@visutry/tryon-core";
+
+const calculator = new FaceMetricsCalculator();
+const scorer = new FaceShapeScorer();
+
+export function classifyPhotoGeometry(points: FaceSemanticPoints, imageSize: ImageSize) {
+  const metrics = calculator.computeFromSemantic(points, imageSize);
+  const result = scorer.scoreFromMetrics(metrics);
+  const advisories =
+    result.primary !== "unknown" && metrics.visutry
+      ? getFaceGeometryAdvisories(metrics.visutry)
+      : [];
+  return { result, advisories };
+}
+```
+
+The host must still handle no-face/multiple-face detection and other evidence
+that is not represented in semantic points. Pass any blocking detector
+warnings to `scoreFromMetrics`; do not fabricate confidence or stability values
+to make a full detector gate pass.
 
 For image-only analysis without a camera:
 
@@ -275,7 +447,8 @@ export async function classifyPhoto(image: HTMLImageElement) {
   await image.decode();
   const analyzer = createVisuTryImageAnalyzer();
   try {
-    return await analyzer.analyzeFaceShapeFromImage(image);
+    // Inspect status and result.warnings to offer a retake for rejected input.
+    return await analyzer.analyzeImage(image);
   } finally {
     analyzer.destroy();
   }

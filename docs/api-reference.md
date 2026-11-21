@@ -10,7 +10,7 @@ experimental WeChat adapter.
 | ----------------------- | ------------------------------------------------------------------------------------- |
 | `@visutry/tryon-core`   | Shared geometry, classification, pose, quality, manifests, and contracts.             |
 | `@visutry/tryon-web`    | Browser camera, MediaPipe tracking, Three.js rendering, photo analysis, and overlays. |
-| `@visutry/recommender`  | Rule-based inventory ranking and heuristic sizing.                                    |
+| `@visutry/recommender`  | Inventory ranking; physical-size rules require explicit measured or calibrated input. |
 | `@visutry/tryon-wechat` | Experimental WeChat adapters with a separate facade and incomplete AR rendering.      |
 
 For Web, construct the SDK with `createVisuTryWebSDK`. For photo-only analysis, use
@@ -31,6 +31,9 @@ These pages describe repository source. Published npm packages can differ from `
 matching tag and installed declarations before using a new API. Generated documentation is not
 evidence of package publication, application deployment, or physical-device acceptance.
 
-Confidence and size estimates are heuristic. Privacy helpers cannot sandbox host code, and the
+Confidence and sizing rules are heuristic; normalized image coordinates do not establish millimeters.
+The [0.3.0 migration guide](https://github.com/franksunye/visutry-tryon-sdk/blob/main/docs/migration-0.3.md)
+describes required image dimensions, rejected results and the optional measurement contract.
+Privacy helpers cannot sandbox host code, and the
 current Web default permits snapshots. Refer to the guides for behavior and limitations that are not
 expressed by TypeScript signatures alone.

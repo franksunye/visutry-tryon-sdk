@@ -173,6 +173,13 @@ export async function analyzeAndDraw(image: HTMLImageElement, canvas: HTMLCanvas
 
 Give the overlay a CSS size. Its mapper uses cover-fit coordinates; display the photo with a matching crop. Handle quality warnings and `primary: "unknown"`. See [Face Shape Algorithm](./face-shape-algorithm.md) for score semantics and parity limits.
 
+`analyzeImage` also returns `status: "accepted" | "rejected"`. Rejected observations
+retain landmarks but have an unknown classification, zero confidence and no candidates.
+No face produces `FACE_NOT_DETECTED`; overlapping analysis produces `ANALYSIS_IN_PROGRESS`.
+Both are recoverable. Serialize calls and destroy the analyzer on teardown.
+Supply intrinsic `imageSize` when passing pre-collected frames; see the
+[0.3.0 migration guide](migration-0.3.md).
+
 ## Snapshots
 
 The default mode is `"camera"` with a video target, otherwise `"overlay"`. A camera snapshot needs a running frame. It returns image data to the caller without uploading it.
@@ -180,7 +187,7 @@ The default mode is `"camera"` with a video target, otherwise `"overlay"`. A cam
 ```ts
 import type { VisuTrySDK } from "@visutry/tryon-core";
 
-export async function capturePreview(sdk: VisuTrySDK) {
+export async function capturePreview(sdk: VisuTrySDK<Blob>) {
   return sdk.snapshot({ format: "image/png", mirror: true });
 }
 ```

@@ -1,74 +1,60 @@
-import type { FaceMetrics } from "@visutry/tryon-core";
-import {
-  AVERAGE_EYE_CENTER_DISTANCE_MM,
-  AVERAGE_FACE_WIDTH_MM,
-  FACE_WIDTH_TIER_THRESHOLDS,
-  LENS_WIDTH_RANGES,
-  MM_PER_NORM,
-  type FaceSizeTier,
-} from "./constants.js";
+import type {
+  FaceMetrics,
+  PhysicalFaceMeasurements,
+  RecommendedGlasses,
+} from "@visutry/tryon-core";
+import { FACE_WIDTH_TIER_THRESHOLDS, LENS_WIDTH_RANGES, type FaceSizeTier } from "./constants.js";
 
 /**
- * Convert the core's normalized `faceWidth` to an approximate millimeter value.
- *
- * The core reports `faceWidth` (cheekbone width, with an eye-outer fallback) in
- * normalized image coordinates. We convert it using the calibration constant
- * `MM_PER_NORM = 140 / 0.3` (see `constants.ts`). When the metric is missing or
- * invalid we fall back to the population average (140mm) so downstream sizing
- * never breaks. The fixed conversion is a heuristic assumption, not a
- * subject-specific calibration or a physical fitting measurement.
+ * @deprecated Normalized image geometry cannot determine physical face width.
+ * Always returns undefined. Pass host-validated physical measurements to
+ * `recommendSize` instead; there is no population-average fallback.
  */
-export function estimateFaceWidthMm(metrics: FaceMetrics): number {
-  const norm = metrics?.faceWidth;
-  if (typeof norm !== "number" || !Number.isFinite(norm) || norm <= 0) {
-    return AVERAGE_FACE_WIDTH_MM;
+export function estimateFaceWidthMm(_metrics: FaceMetrics): undefined {
+  return undefined;
+}
+
+/**
+ * @deprecated Normalized image geometry cannot determine inter-eye distance.
+ * Always returns undefined. An optional eye-center distance must be supplied
+ * explicitly through `PhysicalFaceMeasurements`; it is never inferred.
+ */
+export function estimateEyeCenterDistanceMm(_metrics: FaceMetrics): undefined {
+  return undefined;
+}
+
+/** Physical-input availability and heuristic sizing; not a fit verification. */
+export type SizeRecommendation = RecommendedGlasses["size"];
+
+export function isPositiveFinite(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+/**
+ * Apply sizing rules only to explicit physical measurements from the host.
+ *
+ * `source` records the host's assertion, not SDK-verified provenance. Missing
+ * input, invalid source, or any supplied non-positive/non-finite distance makes
+ * size unavailable. A missing optional eye-center distance stays missing.
+ *
+ * The small/medium/large tiers and lens-width ranges are ranking heuristics,
+ * not calibrated fit guarantees. Image-space FaceMetrics are never converted.
+ */
+export function recommendSize(measurements?: PhysicalFaceMeasurements): SizeRecommendation {
+  if (measurements == null) {
+    return { status: "unavailable", reason: "measurements-required" };
   }
-  return norm * MM_PER_NORM;
-}
 
-/**
- * Convert the core's normalized `eyeCenterDistance` to millimeters using the
- * same calibration factor as {@link estimateFaceWidthMm}. Falls back to ~63mm.
- *
- * Used as a supplementary signal (e.g. flagging lenses wider than the inter-eye
- * distance) — it does not drive the size tier on its own and is not a measured
- * pupillary distance.
- */
-export function estimateEyeCenterDistanceMm(metrics: FaceMetrics): number {
-  const norm = metrics?.eyeCenterDistance;
-  if (typeof norm !== "number" || !Number.isFinite(norm) || norm <= 0) {
-    return AVERAGE_EYE_CENTER_DISTANCE_MM;
+  if (
+    (measurements.source !== "measured" && measurements.source !== "calibrated") ||
+    !isPositiveFinite(measurements.faceWidthMm) ||
+    (measurements.eyeCenterDistanceMm !== undefined &&
+      !isPositiveFinite(measurements.eyeCenterDistanceMm))
+  ) {
+    return { status: "unavailable", reason: "invalid-measurements" };
   }
-  return norm * MM_PER_NORM;
-}
 
-export interface SizeRecommendation {
-  tier: FaceSizeTier;
-  /** Estimated face width in mm. */
-  faceWidthMm: number;
-  /** Estimated inter-eye distance in mm (supplementary signal). */
-  eyeCenterDistanceMm: number;
-  /** Recommended lens-width range [min, max] in mm for this tier. */
-  lensWidthRange: readonly [number, number];
-  /** Ideal total frame width in mm (~ face width; ±10mm tolerance in scorer). */
-  idealFrameWidthMm: number;
-}
-
-/**
- * Derive a size recommendation from face metrics (spec §16.4).
- *
- * Tiers are driven by `faceWidth` (mm):
- *  - small:  < 130mm  -> lens width 38-46mm
- *  - medium: 130-145mm -> lens width 46-52mm
- *  - large:  > 145mm  -> lens width 52-58mm
- *
- * The ideal frame width tracks the face width (a ±10mm tolerance is enforced in
- * the scorer). `eyeCenterDistance` is exposed as a supplementary signal used to
- * flag lens-width cautions.
- */
-export function recommendSize(metrics: FaceMetrics): SizeRecommendation {
-  const faceWidthMm = estimateFaceWidthMm(metrics);
-  const eyeCenterDistanceMm = estimateEyeCenterDistanceMm(metrics);
+  const { faceWidthMm, eyeCenterDistanceMm, source } = measurements;
 
   let tier: FaceSizeTier;
   if (faceWidthMm < FACE_WIDTH_TIER_THRESHOLDS.small) {
@@ -80,9 +66,11 @@ export function recommendSize(metrics: FaceMetrics): SizeRecommendation {
   }
 
   return {
-    tier,
+    status: "available",
+    source,
     faceWidthMm,
-    eyeCenterDistanceMm,
+    ...(eyeCenterDistanceMm === undefined ? {} : { eyeCenterDistanceMm }),
+    tier,
     lensWidthRange: LENS_WIDTH_RANGES[tier],
     idealFrameWidthMm: faceWidthMm,
   };

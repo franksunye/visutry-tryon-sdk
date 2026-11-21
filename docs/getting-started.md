@@ -25,11 +25,11 @@ The source demo also contains `/face-analysis.html` and `/compare.html`. The com
 
 | Need                      | Entry point                   | Host supplies                                               |
 | ------------------------- | ----------------------------- | ----------------------------------------------------------- |
-| Score normalized geometry | `@visutry/tryon-core`         | A `NormalizedFaceResult`                                    |
+| Score normalized geometry | `@visutry/tryon-core`         | Landmarks and their source image dimensions                                    |
 | Analyze a photo           | `@visutry/tryon-web/analyzer` | A decoded image, canvas, bitmap or video frame              |
 | Draw landmarks            | `@visutry/tryon-web/overlay`  | Canvas and normalized face result                           |
 | Camera AR try-on          | `@visutry/tryon-web`          | Canvas, visible video, assets and lifecycle controls        |
-| Rank an inventory         | `@visutry/recommender`        | Face result, inventory and preferences                      |
+| Rank an inventory         | `@visutry/recommender`        | Inventory, preferences, optional face result and physical measurements                      |
 | Explore WeChat            | `@visutry/tryon-wechat`       | Verified platform bridge, tracking loop and custom renderer |
 
 The analyzer subpath avoids the Three.js import graph. The full web entry point includes the renderer. WeChat remains an experimental scaffold; see [WeChat Integration](./wechat-integration.md).
@@ -45,6 +45,9 @@ pnpm add @visutry/tryon-core @visutry/tryon-web @mediapipe/tasks-vision@0.10.35 
 Pin the chosen SDK versions in the host lockfile. Source and published packages may differ; inspect the changelog and exports for the release you install. Keep MediaPipe JavaScript and WASM versions aligned.
 
 In Next.js or another server-rendered application, construct browser adapters in client-side code after the DOM elements exist. Pure core calculations do not require a camera or DOM.
+
+For a detector you already own, use the [shared-core example](../examples/shared-core/README.md).
+For upgrades, review [0.3.0 compatibility changes](migration-0.3.md).
 
 ## Analyze a local photo
 

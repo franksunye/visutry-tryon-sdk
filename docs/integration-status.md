@@ -7,7 +7,31 @@
 This document records adoption evidence. [Architecture](architecture.md) defines the target;
 [the roadmap](roadmap.md) defines the work needed to reach it.
 
-## Inspected revisions
+## 0.3.0 implementation and migration gate
+
+The 0.3.0 source implements aspect-aware 2D geometry, canonical main-site rounding
+and tie order, explicit invalid-input/quality rejection, and a DOM-free public
+contract. Recommendations no longer derive physical dimensions from normalized
+image coordinates. See [migration notes](migration-0.3.md) for behavior changes.
+
+The packaged-consumer gate installs actual core/recommender archives into an
+isolated Node project, compiles all public declarations with ES2020-only libraries,
+and checks the emitted dependency graph. It verifies a portable computation
+contract; it does not validate native device adapters.
+
+A thin main-site adapter has been checked locally against outputs frozen from
+`66381dc7d7ccd053414a1c9069355c3ecef3e21c`: 34 complete geometry cases, 1,440
+classification boundary combinations, 27 signal combinations and 16 profile
+boundaries. The matched browser entry grows by approximately 3.6 KB gzip and adds
+only core, with no runtime/peer dependencies. This is an entry-level bundle
+comparison, not the complete Next.js production bundle.
+
+Registry publication, the application's exact dependency/lockfile, its full CI,
+deployment and live acceptance remain separate gates. This source update does
+not by itself mark the main-site migration complete. The snapshot below records
+the pre-migration state and must not be read as a description of 0.3.0 behavior.
+
+## Pre-migration inspected revisions
 
 | Repository               | Revision                                                                                                                                       |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -15,7 +39,7 @@ This document records adoption evidence. [Architecture](architecture.md) defines
 | Main VisuTry application | [`66381dc7d7ccd053414a1c9069355c3ecef3e21c`](https://github.com/franksunye/VisuTry/commit/66381dc7d7ccd053414a1c9069355c3ecef3e21c).           |
 | VisuTry Mobile           | [`b932c86e3c5a3ad0526c9e3d20a92e10911fe142`](https://github.com/franksunye/visutry-mobile/commit/b932c86e3c5a3ad0526c9e3d20a92e10911fe142).    |
 
-## Adoption summary
+## Pre-migration adoption summary
 
 | Consumer                            | Observed state                                                                                                                                 | Completion status                                                                                                |
 | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
@@ -25,7 +49,7 @@ This document records adoption evidence. [Architecture](architecture.md) defines
 | WeChat                              | Experimental SDK adapters exist, but the facade does not wire a full tracking/rendering loop and the renderer is a placeholder.                | Experimental; not accepted for production AR.                                                                    |
 | Merchant/widget/native app surfaces | Intended consumers of applicable shared capabilities.                                                                                          | No completed integration is established by this audit.                                                           |
 
-## Main-site evidence and parity gaps
+## Historical main-site evidence and parity gaps
 
 The main application has its own
 [`face-landmark-metrics.ts`](https://github.com/franksunye/VisuTry/blob/66381dc7d7ccd053414a1c9069355c3ecef3e21c/src/lib/face-landmark-metrics.ts)

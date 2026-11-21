@@ -27,7 +27,7 @@ are separate delivery states. A working demo does not establish adoption by anot
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Core algorithms      | Implemented TypeScript geometry, scoring, pose, smoothing, quality, and manifest utilities with unit tests.                                                                                              |
 | Web adapter          | Implemented MediaPipe and Three.js integration. The reference release passed a Chromium camera-fixture suite using the real tracker and renderer. Physical-device and retail-fit acceptance remain open. |
-| Recommendations      | Implemented rule-based ranking of a supplied frame inventory. Size estimates are heuristic, not calibrated optical measurements.                                                                         |
+| Recommendations      | Rule-based inventory ranking. Physical-size rules require explicit measured or calibrated host input; image coordinates do not produce millimeters.                                                                         |
 | WeChat adapter       | Experimental camera/tracker/renderer interfaces. It does not yet provide a complete, verified AR pipeline equivalent to Web.                                                                             |
 | VisuTry applications | Shared-core adoption is tracked in [integration status](docs/integration-status.md); production-site equivalence is not assumed.                                                                         |
 | Package releases     | Pin a published version. Changes on `main`, including the reference-demo recovery, do not imply a new npm release.                                                                                       |
@@ -110,13 +110,17 @@ Read the [privacy guide](docs/privacy.md) before integrating capture or analytic
 | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | [`@visutry/tryon-core`](packages/core/README.md)         | Shared contracts and geometry, scoring, pose, smoothing, quality, and manifest algorithms.                                 |
 | [`@visutry/tryon-web`](packages/web/README.md)           | Browser camera, MediaPipe tracking, Three.js rendering, photo analyzer, and overlays.                                      |
-| [`@visutry/recommender`](packages/recommender/README.md) | Rule-based ranking and heuristic sizing for an application-supplied inventory.                                             |
+| [`@visutry/recommender`](packages/recommender/README.md) | Inventory ranking with optional, explicitly supplied physical measurements.                                             |
 | [`@visutry/tryon-wechat`](packages/wechat/README.md)     | Experimental WeChat adapters and a lifecycle facade; see its limitations before use.                                       |
 | [`@visutry/demo-assets`](packages/demo-assets/README.md) | Private workspace assets, including an original, versioned reference frame. Not a retail catalog or published npm package. |
 
 Core and recommender logic must be reused by adapters and consuming products rather than copied
 into new classifiers. The [architecture contract](docs/architecture.md) defines this target and
 acceptance requirements for migrating existing applications.
+
+For breaking behavior changes in 0.3.0, read the [migration guide](docs/migration-0.3.md).
+The [shared-core example](examples/shared-core/README.md) demonstrates geometry and inventory
+ranking without a browser, camera or renderer.
 
 ## Documentation map
 
@@ -138,6 +142,8 @@ corepack pnpm lint
 corepack pnpm typecheck
 corepack pnpm test:coverage
 corepack pnpm build
+corepack pnpm pack:check
+corepack pnpm test:consumer
 corepack pnpm docs:api
 ```
 

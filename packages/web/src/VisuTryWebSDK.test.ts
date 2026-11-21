@@ -87,6 +87,8 @@ function buildFaceResult(overrides: Partial<NormalizedFaceResult> = {}): Normali
   return {
     source: "mediapipe",
     timestamp: Date.now(),
+    imageSize: { width: 1000, height: 1000 },
+    faceCount: 1,
     landmarks: { raw, normalized: raw, semantic: sem },
     pose: { yaw: 0, pitch: 0, roll: 0, confidence: 0.95 },
     bbox: { x: 0.2, y: 0.15, width: 0.6, height: 0.7 },
@@ -263,7 +265,7 @@ describe("VisuTryWebSDK (facade)", () => {
     expect(result.candidates.length).toBeGreaterThan(0);
     expect(result.confidence).toBeGreaterThanOrEqual(0);
     expect(result.metrics).toBeDefined();
-    expect(result.version).toBe("0.2.0");
+    expect(result.version).toBe("0.3.0");
     expect(analyzedSpy).toHaveBeenCalledWith(result);
   });
 
@@ -467,7 +469,9 @@ describe("VisuTryWebSDK (facade)", () => {
     await vi.waitFor(() => expect(FaceLandmarker.createFromOptions).toHaveBeenCalled());
     sdk.destroy();
     finish({ close } as unknown as FaceLandmarker);
-    await expect(pending).rejects.toMatchObject({ code: "UNKNOWN" });
+    // The tracker itself now rejects and closes a late model before the facade
+    // can commit initialization, preserving the more specific failure code.
+    await expect(pending).rejects.toMatchObject({ code: "TRACKER_INIT_FAILED" });
     expect(close).toHaveBeenCalledTimes(1);
     expect(ready).not.toHaveBeenCalled();
     expect(getImpl(sdk).isInitialized).toBe(false);
@@ -773,6 +777,86 @@ describe("VisuTryWebSDK (facade)", () => {
   // ---------------------------------------------------------------------------
   // collectAnalysisFrames — mocked tracker
   // ---------------------------------------------------------------------------
+
+  it("cancels live analysis on destroy and ignores a late successful detection", async () => {
+    const impl = getImpl(sdk);
+    impl.cameraStarted = true;
+    impl.camera.getCurrentFrame = vi.fn().mockReturnValue({ __brand: "HTMLVideoElement", el: {} });
+    let finish!: (face: NormalizedFaceResult) => void;
+    impl.tracker.detect = vi.fn().mockReturnValue(new Promise<NormalizedFaceResult>((resolve) => { finish = resolve; }));
+    const analyzed = vi.fn();
+    sdk.on("faceShapeAnalyzed", analyzed);
+    const raf = vi.spyOn(globalThis, "requestAnimationFrame");
+
+    const pending = sdk.analyzeFaceShape({ config: { sampleFrames: 1, sampleIntervalMs: 0 } });
+    const rejected = expect(pending).rejects.toMatchObject({ message: expect.stringContaining("destroyed") });
+    sdk.destroy();
+    await rejected;
+    finish(buildFaceResult());
+    await Promise.resolve();
+    expect(analyzed).not.toHaveBeenCalled();
+    expect(raf).not.toHaveBeenCalled();
+    expect(impl.cancelFrameCollection).toBeNull();
+  });
+
+  it("stopping the camera cancels analysis without restarting the paused try-on", async () => {
+    const impl = getImpl(sdk);
+    impl.cameraStarted = true;
+    impl.tryOnRunning = true;
+    impl.camera.getCurrentFrame = vi.fn().mockReturnValue({ __brand: "HTMLVideoElement", el: {} });
+    let finish!: (face: NormalizedFaceResult) => void;
+    impl.tracker.detect = vi.fn().mockReturnValue(new Promise<NormalizedFaceResult>((resolve) => { finish = resolve; }));
+    const resume = vi.spyOn(sdk, "startTryOn").mockResolvedValue(undefined);
+    const pending = sdk.analyzeFaceShape({ config: { sampleFrames: 1, sampleIntervalMs: 0 } });
+    const rejected = expect(pending).rejects.toMatchObject({ message: "Camera analysis was cancelled" });
+    sdk.stopCamera();
+    await rejected;
+    finish(buildFaceResult());
+    await Promise.resolve();
+    expect(resume).not.toHaveBeenCalled();
+    expect(impl.isCameraStarted).toBe(false);
+    expect(impl.isTryOnRunning).toBe(false);
+    // The cancelled collection releases the concurrency guard for a new request.
+    expect((await sdk.analyzeFaceShape({ frames: [buildFaceResult()] })).primary).not.toBe("unknown");
+  });
+
+  it("cancels a scheduled analysis frame immediately when the camera stops", async () => {
+    const impl = getImpl(sdk);
+    impl.cameraStarted = true;
+    impl.camera.getCurrentFrame = vi.fn().mockReturnValue(null);
+    vi.spyOn(globalThis, "requestAnimationFrame").mockReturnValue(17);
+    const cancel = vi.spyOn(globalThis, "cancelAnimationFrame");
+    const pending = sdk.analyzeFaceShape({ config: { sampleFrames: 1 } });
+    const rejected = expect(pending).rejects.toMatchObject({ message: "Camera analysis was cancelled" });
+    sdk.stopCamera();
+    await rejected;
+    expect(cancel).toHaveBeenCalledWith(17);
+    expect(impl.cancelFrameCollection).toBeNull();
+  });
+
+  it("rejects destruction after the last sample resolves but before analysis commits", async () => {
+    const impl = getImpl(sdk);
+    impl.cameraStarted = true;
+    impl.camera.getCurrentFrame = vi.fn().mockReturnValue({ __brand: "HTMLVideoElement", el: {} });
+    impl.tracker.detect = vi.fn().mockResolvedValue(buildFaceResult());
+    const pending = sdk.analyzeFaceShape({ config: { sampleFrames: 1, sampleIntervalMs: 0 } });
+    const rejected = expect(pending).rejects.toMatchObject({ message: expect.stringContaining("destroyed") });
+    queueMicrotask(() => sdk.destroy());
+    await rejected;
+  });
+
+  it("pauses and resumes try-on for normal live analysis without cancelling itself", async () => {
+    const impl = getImpl(sdk);
+    impl.cameraStarted = true;
+    impl.tryOnRunning = true;
+    impl.camera.getCurrentFrame = vi.fn().mockReturnValue({ __brand: "HTMLVideoElement", el: {} });
+    impl.tracker.detect = vi.fn().mockResolvedValue(buildFaceResult());
+    const resume = vi.spyOn(sdk, "startTryOn").mockResolvedValue(undefined);
+    const result = await sdk.analyzeFaceShape({ config: { sampleFrames: 1, sampleIntervalMs: 0 } });
+    expect(result.primary).not.toBe("unknown");
+    expect(resume).toHaveBeenCalledTimes(1);
+    expect(impl.cancelFrameCollection).toBeNull();
+  });
 
   it("collectAnalysisFrames collects quality frames from mocked tracker", async () => {
     const impl = getImpl(sdk);

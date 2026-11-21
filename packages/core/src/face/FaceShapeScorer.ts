@@ -7,18 +7,19 @@ import type {
   NormalizedFaceResult,
 } from "../types/index.js";
 import { FaceMetricsCalculator } from "./FaceMetricsCalculator.js";
-import { MAX_TILT_DEG, MAX_SYMMETRY_OFFSET, MIN_FACE_SPAN } from "./constants.js";
+import { QualityGate } from "../quality/QualityGate.js";
+import { getFaceGeometryWarnings } from "./geometryQuality.js";
 
-export const FACE_SHAPE_SCORER_VERSION = "0.2.0";
+/** Aspect-aware 2D geometry, main-compatible rounding/ties and explicit quality rejection. */
+export const FACE_SHAPE_SCORER_VERSION = "0.3.0";
 
 /**
- * SDK canonical order, also used to resolve equal scores deterministically.
- * A consuming application's independently maintained order may differ.
+ * Main-compatible canonical order, also used to resolve equal scores.
  */
-const CANONICAL_SHAPES: FaceShape[] = [
-  "oval",
+const CANONICAL_SHAPES: Exclude<FaceShape, "unknown">[] = [
   "round",
   "square",
+  "oval",
   "heart",
   "diamond",
   "oblong",
@@ -37,7 +38,17 @@ function round(value: number, digits = 3): number {
 /**
  * Build geometry signals, originally ported from VisuTry's buildGeometrySignals().
  */
-function buildGeometrySignals(
+export function classifyJawProfile(value: unknown): "tapered" | "strong" | "balanced" | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return value <= 0.78 ? "tapered" : value >= 0.94 ? "strong" : "balanced";
+}
+
+export function classifyUpperFaceProfile(value: unknown): "narrower" | "broad" | "balanced" | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return value < 0.84 ? "narrower" : value > 0.92 ? "broad" : "balanced";
+}
+
+export function buildGeometrySignals(
   shape: FaceShape,
   ratios: NonNullable<FaceMetrics["visutry"]>,
 ): string[] {
@@ -54,7 +65,7 @@ function buildGeometrySignals(
         ? "Jawline tapers below the cheekbones"
         : "Jawline has moderate taper";
   const upperSignal =
-    ratios.foreheadToCheekWidth >= 0.9
+    classifyUpperFaceProfile(ratios.foreheadToCheekWidth) === "broad"
       ? "Forehead width is close to cheekbone width"
       : "Cheekbones read wider than the upper face";
   const shapeSignal = shape.charAt(0).toUpperCase() + shape.slice(1) + " shape supported by measured proportions";
@@ -99,14 +110,21 @@ function computeAllScores(ratios: NonNullable<FaceMetrics["visutry"]>): Record<s
  *   - jawToCheekWidth
  *   - foreheadToCheekWidth
  *
- * Confidence: clamp(0.56 + best.score * 0.065 + margin * 0.035, 0.58, 0.93)
+ * Confidence: clamp(0.56 + best.score * 0.065 + margin * 0.035, 0.58, 0.93).
+ * This low-level function requires valid ratios and throws for invalid values;
+ * use FaceShapeScorer for geometry/quality rejection with an unknown result.
  */
-function classifyFaceGeometry(ratios: NonNullable<FaceMetrics["visutry"]>): {
-  shape: FaceShape;
-  alternatives: FaceShape[];
+export function classifyFaceGeometry(ratios: NonNullable<FaceMetrics["visutry"]>): {
+  shape: Exclude<FaceShape, "unknown">;
+  alternatives: Exclude<FaceShape, "unknown">[];
   confidence: number;
   signals: string[];
 } {
+  if (Object.values(ratios).some((value) => !Number.isFinite(value))
+    || ratios.faceAspectRatio <= 0 || ratios.cheekToFaceWidth <= 0
+    || ratios.jawToCheekWidth < 0 || ratios.foreheadToCheekWidth < 0) {
+    throw new RangeError("Face geometry ratios must be finite and non-degenerate.");
+  }
   const scores = computeAllScores(ratios);
 
   // --- Rank candidates ---
@@ -147,6 +165,7 @@ function classifyFaceGeometry(ratios: NonNullable<FaceMetrics["visutry"]>): {
  */
 export class FaceShapeScorer {
   private readonly metricsCalculator: FaceMetricsCalculator;
+  private readonly qualityGate = new QualityGate();
 
   constructor(metricsCalculator?: FaceMetricsCalculator) {
     this.metricsCalculator = metricsCalculator ?? new FaceMetricsCalculator();
@@ -157,46 +176,22 @@ export class FaceShapeScorer {
    */
   score(face: NormalizedFaceResult): FaceShapeResult {
     const metrics = this.metricsCalculator.compute(face);
-    return this.scoreFromMetrics(metrics, face.quality.warnings);
+    const gate = this.qualityGate.evaluate({ face, mode: "analysis" });
+    if (!gate.passed) return this.unknownResult(metrics, gate.warnings);
+    return this.scoreFromMetrics(metrics, gate.warnings);
   }
 
   /**
-   * Score from pre-aggregated metrics.
+   * Score from calculated/aggregated geometry without inventing detector quality.
+   * Any caller-supplied warning is blocking. Legacy metrics without explicit
+   * geometry validity must be recalculated with their source image dimensions.
    */
   scoreFromMetrics(metrics: FaceMetrics, warnings: FaceQualityWarning[] = []): FaceShapeResult {
-    // Require visutry-compatible ratios for classification.
-    if (!metrics.visutry) {
-      return this.unknownResult(metrics, [...warnings, "MISSING_KEY_POINTS"]);
+    const allWarnings = [...new Set([...warnings, ...getFaceGeometryWarnings(metrics)])];
+    if (metrics.geometryValid !== true || !metrics.visutry || allWarnings.length > 0) {
+      return this.unknownResult(metrics, allWarnings.length ? allWarnings : ["INVALID_LANDMARKS"]);
     }
-
     const v = metrics.visutry;
-
-    // --- SDK quality gates; consumer parity requires separate verification ---
-    const MAX_TILT = MAX_TILT_DEG;
-    const MAX_SYMMETRY = MAX_SYMMETRY_OFFSET;
-    const MIN_SPAN = MIN_FACE_SPAN;
-
-    const allWarnings = [...warnings];
-
-    // Face span check
-    if (metrics.faceSpan !== undefined && metrics.faceSpan < MIN_SPAN) {
-      allWarnings.push("FACE_TOO_SMALL");
-    }
-
-    // Tilt check — visutry rejects > 15° as unavailable
-    if (Math.abs(v.eyeLineTiltDeg) > MAX_TILT) {
-      allWarnings.push("EXCESSIVE_TILT");
-    }
-
-    // Symmetry check — visutry rejects > 0.14 as unavailable
-    if (v.symmetryOffset > MAX_SYMMETRY) {
-      allWarnings.push("ASYMMETRIC_FACE");
-    }
-
-    // If quality gates failed, return unknown
-    if (allWarnings.some((w) => w === "EXCESSIVE_TILT" || w === "ASYMMETRIC_FACE" || w === "FACE_TOO_SMALL")) {
-      return this.unknownResult(metrics, allWarnings);
-    }
 
     // --- Classify using the SDK's versioned scoring rules ---
     const result = classifyFaceGeometry(v);
@@ -218,24 +213,13 @@ export class FaceShapeScorer {
       reasons: buildGeometrySignals(r.shape, v),
     }));
 
-    // --- Soft warnings for borderline quality ---
-    if (Math.abs(v.eyeLineTiltDeg) > 8) {
-      if (!allWarnings.includes("EXCESSIVE_TILT")) {
-        allWarnings.push("EXCESSIVE_TILT");
-      }
-    }
-    if (v.symmetryOffset > 0.08) {
-      if (!allWarnings.includes("ASYMMETRIC_FACE")) {
-        allWarnings.push("ASYMMETRIC_FACE");
-      }
-    }
-
     return {
       primary: result.shape,
       candidates,
       confidence: result.confidence,
       metrics,
       warnings: allWarnings,
+      signals: result.signals,
       version: FACE_SHAPE_SCORER_VERSION,
     };
   }
@@ -248,7 +232,7 @@ export class FaceShapeScorer {
       return this.unknownResult();
     }
     const metrics = this.metricsCalculator.aggregate(frames);
-    const warnings = frames[0].quality.warnings;
+    const warnings = [...new Set(frames.flatMap((face) => this.qualityGate.evaluate({ face, mode: "analysis" }).warnings))];
     return this.scoreFromMetrics(metrics, warnings);
   }
 
@@ -271,21 +255,9 @@ export class FaceShapeScorer {
       primary: "unknown",
       candidates: [],
       confidence: 0,
-      metrics: metrics ?? {
-        faceWidth: 0,
-        faceHeight: 0,
-        cheekboneWidth: 0,
-        jawWidth: 0,
-        eyeOuterDistance: 0,
-        eyeInnerDistance: 0,
-        eyeCenterDistance: 0,
-        noseBridgeToEyeLine: 0,
-        widthHeightRatio: 0,
-        jawCheekRatio: 0,
-        chinType: "unknown",
-        measurementQuality: 0,
-      },
-      warnings,
+      metrics: metrics ?? this.metricsCalculator.aggregate([]),
+      warnings: [...new Set(warnings)],
+      signals: [],
       version: FACE_SHAPE_SCORER_VERSION,
     };
   }

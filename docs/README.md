@@ -17,6 +17,9 @@ The TypeDoc configuration covers all four public package entry points. WeChat re
 documenting its types does not establish feature parity with Web. See the
 [API reference introduction](api-reference.md) for entry-point guidance.
 
+For upgrading an existing integration, read [Migrating to 0.3.0](migration-0.3.md).
+A [standalone shared-core example](../examples/shared-core/README.md) demonstrates the platform-neutral contract.
+
 ## Understand behavior
 
 | Document                                            | Authority                                                                                |

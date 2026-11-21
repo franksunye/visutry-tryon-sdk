@@ -2,24 +2,20 @@
  * @visutry/recommender
  *
  * Glasses recommendation engine for the VisuTry SDK. Combines face-shape x
- * frame-shape matching, heuristic size estimates expressed in millimetres and user
- * preference scoring to rank a glasses inventory for a given face.
+ * frame-shape rules, optional host-supplied physical measurements and user
+ * preferences to rank a glasses inventory. Image geometry does not infer size.
  */
 
 // Engine
 export { Recommender } from "./Recommender.js";
 
-// Constants & calibration
+// Inspectable heuristic rules
 export {
   FACE_SHAPE_FRAME_MATCH,
   SCORE_WEIGHTS,
   MAX_RAW_SCORE,
   LENS_WIDTH_RANGES,
   FACE_WIDTH_TIER_THRESHOLDS,
-  AVERAGE_FACE_WIDTH_MM,
-  AVERAGE_FACE_WIDTH_NORM,
-  AVERAGE_EYE_CENTER_DISTANCE_MM,
-  MM_PER_NORM,
   type FaceSizeTier,
 } from "./constants.js";
 
@@ -30,3 +26,5 @@ export {
   recommendSize,
   type SizeRecommendation,
 } from "./sizing.js";
+
+export type { PhysicalFaceMeasurements } from "@visutry/tryon-core";

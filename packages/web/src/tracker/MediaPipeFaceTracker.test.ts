@@ -82,7 +82,18 @@ import { MediaPipeFaceTracker } from "./MediaPipeFaceTracker.js";
 function makeMockVideo(): HTMLVideoElement {
   const video = document.createElement("video");
   Object.defineProperty(video, "readyState", { value: 4, configurable: true });
+  Object.defineProperty(video, "videoWidth", { value: 640, configurable: true });
+  Object.defineProperty(video, "videoHeight", { value: 480, configurable: true });
   return video;
+}
+
+function makeMockImage(width = 800, height = 400): HTMLImageElement {
+  const image = new Image();
+  Object.defineProperty(image, "naturalWidth", { value: width });
+  Object.defineProperty(image, "naturalHeight", { value: height });
+  image.width = 100;
+  image.height = 100;
+  return image;
 }
 
 describe("MediaPipeFaceTracker", () => {
@@ -287,6 +298,25 @@ describe("MediaPipeFaceTracker", () => {
     await tracker.initialize({ mode: "balanced" });
     tracker.destroy();
     expect(mockFaceLandmarker.close).toHaveBeenCalled();
+  });
+
+  it("releases the IMAGE model even if closing the VIDEO model fails", async () => {
+    const videoModel = { ...mockFaceLandmarker, close: vi.fn(() => { throw new Error("close failed"); }) };
+    const imageModel = { ...mockFaceLandmarker, close: vi.fn() };
+    vi.mocked(FaceLandmarker.createFromOptions)
+      .mockResolvedValueOnce(videoModel as unknown as FaceLandmarker)
+      .mockResolvedValueOnce(imageModel as unknown as FaceLandmarker);
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      await tracker.initialize();
+      await tracker.detectImage(makeMockImage());
+      tracker.destroy();
+      tracker.destroy();
+      expect(videoModel.close).toHaveBeenCalledTimes(1);
+      expect(imageModel.close).toHaveBeenCalledTimes(1);
+    } finally {
+      warning.mockRestore();
+    }
   });
 
   it("exports CoordinateSystem static accessor", () => {
@@ -565,7 +595,7 @@ describe("MediaPipeFaceTracker", () => {
   // detectImage — IMAGE-mode single photo analysis
   // ---------------------------------------------------------------------------
 
-  it("detectImage throws when not initialized", async () => {
+  it("detectImage rejects unsupported input", async () => {
     await expect(tracker.detectImage({})).rejects.toMatchObject({
       code: "TRACKER_DETECT_FAILED",
     });
@@ -575,17 +605,88 @@ describe("MediaPipeFaceTracker", () => {
     await tracker.initialize({ mode: "balanced" });
     // Mock detect to return empty landmarks
     mockFaceLandmarker.detect.mockReturnValueOnce({ faceLandmarks: [] });
-    const img = new Image();
+    const img = makeMockImage();
     const result = await tracker.detectImage(img);
     expect(result).toBeNull();
   });
 
   it("detectImage analyzes an HTMLImageElement and returns a result", async () => {
     await tracker.initialize({ mode: "balanced" });
-    const img = new Image();
+    const img = makeMockImage();
     const result = await tracker.detectImage(img);
     expect(result).not.toBeNull();
     expect(result!.source).toBe("mediapipe");
     expect(mockFaceLandmarker.detect).toHaveBeenCalled();
+    expect(result!.imageSize).toEqual({ width: 800, height: 400 });
+    expect(result!.faceCount).toBe(1);
+  });
+
+  it("records intrinsic video dimensions and retains previous observation points", async () => {
+    await tracker.initialize({ mode: "balanced" });
+    const video = makeMockVideo();
+    const first = await tracker.detect(video as unknown as any);
+    const originalX = first!.landmarks.normalized[33]!.x;
+    const moved = mockLandmarks.map((point) => ({ ...point, x: point.x + 0.02 }));
+    mockFaceLandmarker.detectForVideo.mockReturnValueOnce({ faceLandmarks: [moved], facialTransformationMatrixes: [] });
+    const second = await tracker.detect(video as unknown as any);
+    expect(first!.imageSize).toEqual({ width: 640, height: 480 });
+    expect(first!.landmarks.normalized[33]!.x).toBe(originalX);
+    expect(second!.landmarks.normalized[33]!.x).toBeCloseTo(originalX + 0.02);
+  });
+
+  it("rejects undecoded images before initializing a model", async () => {
+    vi.mocked(FaceLandmarker.createFromOptions).mockClear();
+    await expect(tracker.detectImage(new Image())).rejects.toMatchObject({
+      code: "TRACKER_DETECT_FAILED", message: "Image input has no valid decoded dimensions",
+    });
+    expect(FaceLandmarker.createFromOptions).not.toHaveBeenCalled();
+  });
+
+  it("records multiple faces and uses an IMAGE detector that can observe a second face", async () => {
+    vi.mocked(FaceLandmarker.createFromOptions).mockClear();
+    mockFaceLandmarker.detect.mockReturnValueOnce({ faceLandmarks: [mockLandmarks, mockLandmarks], facialTransformationMatrixes: [] });
+    const result = await tracker.detectImage(makeMockImage());
+    expect(FaceLandmarker.createFromOptions).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      runningMode: "IMAGE", numFaces: 2,
+    }));
+    expect(result!.faceCount).toBe(2);
+    expect(result!.quality.warnings).toContain("MULTIPLE_FACES");
+  });
+
+  it("does not treat movement between unrelated still photos as video instability", async () => {
+    await tracker.detectImage(makeMockImage());
+    const moved = mockLandmarks.map((point) => ({ ...point, x: point.x + 0.1 }));
+    mockFaceLandmarker.detect.mockReturnValueOnce({ faceLandmarks: [moved], facialTransformationMatrixes: [] });
+    const result = await tracker.detectImage(makeMockImage());
+    expect(result!.quality.stabilityScore).toBe(1);
+    expect(result!.quality.warnings).not.toContain("UNSTABLE");
+  });
+
+  it("shares concurrent IMAGE initialization", async () => {
+    let finish!: (value: FaceLandmarker) => void;
+    vi.mocked(FaceLandmarker.createFromOptions).mockClear().mockReturnValueOnce(
+      new Promise<FaceLandmarker>((resolve) => { finish = resolve; }),
+    );
+    const first = tracker.detectImage(makeMockImage());
+    const second = tracker.detectImage(makeMockImage());
+    await vi.waitFor(() => expect(FaceLandmarker.createFromOptions).toHaveBeenCalledTimes(1));
+    finish(mockFaceLandmarker as unknown as FaceLandmarker);
+    const results = await Promise.all([first, second]);
+    expect(results.every((result) => result !== null)).toBe(true);
+  });
+
+  it("closes an IMAGE model which finishes initialization after destroy", async () => {
+    let finish!: (value: FaceLandmarker) => void;
+    const late = { ...mockFaceLandmarker, close: vi.fn(), detect: vi.fn() };
+    vi.mocked(FaceLandmarker.createFromOptions).mockClear().mockReturnValueOnce(
+      new Promise<FaceLandmarker>((resolve) => { finish = resolve; }),
+    );
+    const pending = tracker.detectImage(makeMockImage());
+    await vi.waitFor(() => expect(FaceLandmarker.createFromOptions).toHaveBeenCalledTimes(1));
+    tracker.destroy();
+    finish(late as unknown as FaceLandmarker);
+    await expect(pending).rejects.toMatchObject({ code: "TRACKER_INIT_FAILED" });
+    expect(late.close).toHaveBeenCalledTimes(1);
+    expect(late.detect).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,15 @@
 # @visutry/tryon-core
 
+## 0.3.0
+
+### Minor Changes
+
+- Require source image dimensions for photo geometry; correct non-square distances and tilt using one 2D scale.
+- Share classifier/profile/advisory functions and canonical main-site rounding and tie order. Algorithm identifier is 0.3.0.
+- Reject invalid geometry and failed analysis quality with unknown/zero confidence/empty candidates; invalid frames cannot disappear into aggregation.
+- Export platform-neutral canvas/snapshot contracts without requiring DOM declarations.
+- See [migration notes](../../docs/migration-0.3.md) for breaking behavior and input changes.
+
 ## 0.2.2
 
 ### Patch Changes
