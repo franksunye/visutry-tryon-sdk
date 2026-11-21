@@ -1,0 +1,35 @@
+name: R1 Demo GLB asset preflight
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/r1-demo-assets.yml'
+      - 'scripts/check-demo-assets.mjs'
+      - 'packages/demo-assets/glasses/**'
+      - 'package.json'
+  workflow_dispatch:
+
+jobs:
+  verify-demo-assets:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify real GLB headers and browser CORS for demo manifests
+        run: node scripts/check-demo-assets.mjs
+      - name: Diagnose external CDN certificate after failure (read only)
+        if: failure()
+        shell: bash
+        run: |
+          echo "TLS certificate presented by cdn.visutry.com:"
+          echo | openssl s_client -connect cdn.visutry.com:443 -servername cdn.visutry.com 2>/dev/null | openssl x509 -noout -subject -issuer -dates || true
+          echo "DIAGNOSTIC ONLY (untrusted): HTTPS status with TLS verification bypassed; NEVER an acceptance PASS"
+          for model in aviator-classic cateye-fashion round-retro sport-wrap square-modern; do
+            printf "%s: " "$model"
+            curl -k -L -sS -I --max-time 12 -o /dev/null -w 'status=%{http_code} content_type=%{content_type}\\n' "https://cdn.visutry.com/demo/glasses/$model.glb" || true
+          done
