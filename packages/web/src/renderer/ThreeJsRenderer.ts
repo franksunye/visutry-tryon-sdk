@@ -9,7 +9,7 @@ import type {
   SnapshotOptions,
   SnapshotResult,
 } from "@visutry/tryon-core";
-import { createSDKError, t } from "@visutry/tryon-core";
+import { createSDKError, MM_TO_RENDER_WORLD, t } from "@visutry/tryon-core";
 
 const UNIT_TO_MM: Record<GlassesAssetManifest["coordinateSystem"]["unit"], number> = {
   millimeter: 1,
@@ -22,9 +22,9 @@ const UNIT_TO_MM: Record<GlassesAssetManifest["coordinateSystem"]["unit"], numbe
  *
  * Coordinate contract: an orthographic camera is set up so that render-world
  * units map 1:1 to normalized image space (y ∈ [-0.5, 0.5], x scaled by aspect).
- * The glasses model is normalized to millimetres on load; `GlassesPose.scale`
- * (produced by the core solver, which already folds in `MM_TO_RENDER_WORLD`)
- * converts millimetres to render-world units.
+ * Model-local units are converted to render-world units exactly once on load.
+ * `GlassesPose.scale` is the relative fitting ratio produced by the solver;
+ * its denominator uses the same mm-to-world calibration constant.
  *
  * The canvas is transparent so it can overlay a CSS-positioned `<video>`.
  */
@@ -40,10 +40,14 @@ export class ThreeJsRenderer implements IRenderer {
   private canvas: HTMLCanvasElement | null = null;
   private contextLost = false;
   private disposed = false;
-  private loadRetries = 0;
+  private loadGeneration = 0;
   private readonly maxLoadRetries = 2;
 
   async initialize(target: RenderTarget, options?: RenderOptions): Promise<void> {
+    if (this.disposed) {
+      throw createSDKError("RENDERER_INIT_FAILED", t("error.renderer_disposed"));
+    }
+    if (this.renderer) return;
     const canvas = this.resolveCanvas(target);
     if (!canvas) {
       throw createSDKError("RENDERER_INIT_FAILED", t("error.renderer_init_failed"));
@@ -88,9 +92,9 @@ export class ThreeJsRenderer implements IRenderer {
     if (!this.scene) {
       throw createSDKError("RENDERER_INIT_FAILED", t("error.renderer_init_failed"));
     }
-    this.currentAsset = asset;
-    // Reset retry counter for this new load attempt.
-    this.loadRetries = 0;
+    const scene = this.scene;
+    const generation = ++this.loadGeneration;
+    let retries = 0;
 
     // Retry glTF loading with a fixed 500ms delay between attempts.
     let gltf;
@@ -98,39 +102,47 @@ export class ThreeJsRenderer implements IRenderer {
     while (true) {
       try {
         gltf = await this.gltfLoader.loadAsync(asset.modelUrl);
-        this.loadRetries = 0;
         break;
       } catch (err) {
         lastErr = err;
-        if (this.loadRetries < this.maxLoadRetries) {
+        this.assertCurrentLoad(generation, scene);
+        if (retries < this.maxLoadRetries) {
           await this.delay(500);
-          this.loadRetries++;
+          this.assertCurrentLoad(generation, scene);
+          retries++;
           continue;
         }
         throw createSDKError("GLASSES_LOAD_FAILED", `${t("error.glasses_load_failed")} ${asset.modelUrl}`, lastErr);
       }
     }
 
-    // Normalize the model to millimetres.
+    // A late GLB response must not resurrect a disposed/replaced scene. Its
+    // newly parsed geometry and textures are still ours to release.
+    try {
+      this.assertCurrentLoad(generation, scene);
+    } catch (err) {
+      this.disposeObject(gltf.scene);
+      throw err;
+    }
+
+    // Convert native units → mm → render-world once, preserving GLTF node
+    // transforms. The pose solver already applies manifest defaultRotation,
+    // so applying it to this root again would rotate the model twice.
     const unitFactor = UNIT_TO_MM[asset.coordinateSystem.unit];
     const root = gltf.scene;
-    root.scale.setScalar(unitFactor);
-    // Apply default rotation/scale from the manifest as the baseline; the
-    // per-frame pose from the solver multiplies on top via the group.
-    root.rotation.set(
-      asset.fitting.defaultRotation.x,
-      asset.fitting.defaultRotation.y,
-      asset.fitting.defaultRotation.z,
-    );
+    root.scale.multiplyScalar(unitFactor * MM_TO_RENDER_WORLD);
 
     if (this.glassesGroup) {
       this.disposeObject(this.glassesGroup);
-      this.scene.remove(this.glassesGroup);
+      scene.remove(this.glassesGroup);
     }
     this.glassesGroup = new THREE.Group();
     this.glassesGroup.add(root);
     this.glassesGroup.visible = false;
-    this.scene.add(this.glassesGroup);
+    scene.add(this.glassesGroup);
+    // Preserve the previously loaded model and identity if a replacement
+    // fails. Only commit the new asset after it is attached successfully.
+    this.currentAsset = asset;
   }
 
   applyPose(pose: GlassesPose): void {
@@ -139,7 +151,7 @@ export class ThreeJsRenderer implements IRenderer {
     if (!pose.visible) return;
     this.glassesGroup.position.set(pose.position.x, pose.position.y, pose.position.z);
     this.glassesGroup.rotation.set(pose.rotation.x, pose.rotation.y, pose.rotation.z);
-    // The model was normalized to mm; pose.scale converts mm → render-world.
+    // The model is already in render-world units; this is relative fitting.
     this.glassesGroup.scale.setScalar(pose.scale.x);
   }
 
@@ -177,15 +189,31 @@ export class ThreeJsRenderer implements IRenderer {
     if (!this.renderer || !this.scene || !this.camera) {
       throw createSDKError("SNAPSHOT_FAILED", t("error.snapshot_failed"));
     }
-    // Render at requested resolution.
+    this.assertSnapshotDimensions(w, h);
+    // Render at requested resolution. The camera retains the source aspect;
+    // a caller-requested different aspect stretches all exported layers alike.
     const needResize = w !== this.width || h !== this.height;
-    if (needResize) this.renderer.setSize(w, h, false);
-    // Render immediately before toDataURL — with preserveDrawingBuffer: false,
-    // the browser may clear the buffer between frames, so we must render
-    // synchronously right before reading back pixels.
-    this.renderer.render(this.scene, this.camera);
-    const dataUrl = this.renderer.domElement.toDataURL(format, quality);
-    if (needResize) this.renderer.setSize(this.width, this.height, false);
+    let dataUrl: string;
+    try {
+      if (needResize) this.renderer.setSize(w, h, false);
+      // With preserveDrawingBuffer:false, copy synchronously after rendering.
+      this.renderer.render(this.scene, this.camera);
+      if (options?.mirror) {
+        const output = document.createElement("canvas");
+        output.width = w;
+        output.height = h;
+        const ctx = output.getContext("2d");
+        if (!ctx) throw createSDKError("SNAPSHOT_FAILED", "Cannot create snapshot canvas");
+        ctx.translate(w, 0);
+        ctx.scale(-1, 1);
+        ctx.drawImage(this.renderer.domElement, 0, 0, w, h);
+        dataUrl = output.toDataURL(format, quality);
+      } else {
+        dataUrl = this.renderer.domElement.toDataURL(format, quality);
+      }
+    } finally {
+      if (needResize) this.renderer.setSize(this.width, this.height, false);
+    }
 
     return {
       dataUrl,
@@ -193,6 +221,26 @@ export class ThreeJsRenderer implements IRenderer {
       height: h,
       timestamp: Date.now(),
     };
+  }
+
+  /**
+   * Draw the unmirrored, transparent 3D layer into a caller-owned canvas.
+   * The web facade uses this for camera+glasses snapshots; the renderer has no
+   * camera-stream dependency and remains usable as an independent overlay.
+   */
+  drawToCanvas(context: CanvasRenderingContext2D, width: number, height: number): void {
+    if (this.disposed || this.contextLost || !this.renderer || !this.scene || !this.camera) {
+      throw createSDKError("SNAPSHOT_FAILED", t("error.snapshot_failed"));
+    }
+    this.assertSnapshotDimensions(width, height);
+    const needResize = width !== this.width || height !== this.height;
+    try {
+      if (needResize) this.renderer.setSize(width, height, false);
+      this.renderer.render(this.scene, this.camera);
+      context.drawImage(this.renderer.domElement, 0, 0, width, height);
+    } finally {
+      if (needResize) this.renderer.setSize(this.width, this.height, false);
+    }
   }
 
   resize(width: number, height: number): void {
@@ -210,6 +258,7 @@ export class ThreeJsRenderer implements IRenderer {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.loadGeneration++;
     if (this.canvas) {
       this.canvas.removeEventListener("webglcontextlost", this.onContextLost);
       this.canvas.removeEventListener("webglcontextrestored", this.onContextRestored);
@@ -236,19 +285,22 @@ export class ThreeJsRenderer implements IRenderer {
   private onContextLost = (event: Event): void => {
     event.preventDefault();
     this.contextLost = true;
+    this.loadGeneration++;
     console.warn("[VisuTrySDK]", "ThreeJsRenderer: WebGL context lost.");
   };
 
   private onContextRestored = (): void => {
+    if (this.disposed) return;
     this.contextLost = false;
     console.info("[VisuTrySDK]", "ThreeJsRenderer: WebGL context restored.");
     // Re-setup the scene (camera, lights) after context loss.
+    if (this.glassesGroup) this.disposeObject(this.glassesGroup);
+    this.glassesGroup = null;
     this.scene = new THREE.Scene();
     this.setupCamera(this.width, this.height);
     this.setupLights();
     // Reload glasses if a model was previously loaded.
     if (this.currentAsset) {
-      this.glassesGroup = null;
       this.loadGlasses(this.currentAsset).catch((err) => {
         console.warn("[VisuTrySDK]", "ThreeJsRenderer: failed to reload glasses after context restore:", err);
       });
@@ -257,6 +309,18 @@ export class ThreeJsRenderer implements IRenderer {
 
   private delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private assertCurrentLoad(generation: number, scene: THREE.Scene): void {
+    if (this.disposed || this.contextLost || generation !== this.loadGeneration || this.scene !== scene) {
+      throw createSDKError("GLASSES_LOAD_FAILED", "Glasses load was cancelled");
+    }
+  }
+
+  private assertSnapshotDimensions(width: number, height: number): void {
+    if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
+      throw createSDKError("SNAPSHOT_FAILED", "Snapshot dimensions must be positive integers");
+    }
   }
 
   private setupCamera(width: number, height: number): void {

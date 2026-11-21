@@ -9,7 +9,7 @@ const mockGeometry = { dispose: vi.fn() };
 const mockMaterial = { dispose: vi.fn() };
 const mockMesh = { geometry: mockGeometry, material: mockMaterial, traverse: vi.fn() };
 const mockGltfScene = {
-  scale: { setScalar: vi.fn() },
+  scale: { multiplyScalar: vi.fn() },
   rotation: { set: vi.fn() },
   traverse: vi.fn((cb: (o: any) => void) => {
     cb(mockMesh);
@@ -39,7 +39,7 @@ const mockRenderer = {
   render: vi.fn(),
   dispose: vi.fn(),
   domElement: {
-    toDataURL: vi.fn().mockReturnValue("data:image/png;base64,xxx"),
+    toDataURL: vi.fn(() => "data:image/png;base64,xxx"),
   },
 };
 
@@ -120,6 +120,7 @@ describe("ThreeJsRenderer", () => {
 
   afterEach(() => {
     renderer.dispose();
+    vi.restoreAllMocks();
   });
 
   it("initializes with a canvas element", async () => {
@@ -156,8 +157,8 @@ describe("ThreeJsRenderer", () => {
     const manifest = makeManifest();
     await renderer.loadGlasses(manifest);
     expect(renderer.currentGlassesAsset).toEqual(manifest);
-    expect(mockGltfScene.scale.setScalar).toHaveBeenCalledWith(1); // mm unit factor
-    expect(mockGltfScene.rotation.set).toHaveBeenCalledWith(0, 0, 0);
+    expect(mockGltfScene.scale.multiplyScalar).toHaveBeenCalledWith(0.005); // mm → render world
+    expect(mockGltfScene.rotation.set).not.toHaveBeenCalled(); // solver applies fitting rotation
     expect(mockScene.add).toHaveBeenCalled();
   });
 
@@ -167,7 +168,7 @@ describe("ThreeJsRenderer", () => {
       coordinateSystem: { unit: "centimeter", forwardAxis: "+z", upAxis: "+y" },
     });
     await renderer.loadGlasses(manifest);
-    expect(mockGltfScene.scale.setScalar).toHaveBeenCalledWith(10); // cm → mm
+    expect(mockGltfScene.scale.multiplyScalar).toHaveBeenCalledWith(0.05); // cm → render world
   });
 
   it("loads glasses with meter unit normalization", async () => {
@@ -176,7 +177,7 @@ describe("ThreeJsRenderer", () => {
       coordinateSystem: { unit: "meter", forwardAxis: "+z", upAxis: "+y" },
     });
     await renderer.loadGlasses(manifest);
-    expect(mockGltfScene.scale.setScalar).toHaveBeenCalledWith(1000); // m → mm
+    expect(mockGltfScene.scale.multiplyScalar).toHaveBeenCalledWith(5); // m → render world
   });
 
   it("applies pose to glasses group", async () => {
@@ -246,6 +247,60 @@ describe("ThreeJsRenderer", () => {
     const result = await renderer.snapshot({ width: 1280, height: 960 });
     expect(result.width).toBe(1280);
     expect(result.height).toBe(960);
+  });
+
+  it("restores the viewport when snapshot encoding fails", async () => {
+    await renderer.initialize(canvas, { width: 640, height: 480 });
+    mockRenderer.domElement.toDataURL.mockImplementationOnce(() => { throw new Error("encode failed"); });
+    await expect(renderer.snapshot({ width: 1280, height: 960 })).rejects.toThrow("encode failed");
+    expect(mockRenderer.setSize).toHaveBeenLastCalledWith(640, 480, false);
+  });
+
+  it("copies the overlay immediately after rendering and restores its viewport", async () => {
+    await renderer.initialize(canvas, { width: 640, height: 480 });
+    const drawImage = vi.fn();
+    renderer.drawToCanvas({ drawImage } as unknown as CanvasRenderingContext2D, 1280, 960);
+    expect(drawImage).toHaveBeenCalledWith(mockRenderer.domElement, 0, 0, 1280, 960);
+    expect(mockRenderer.render.mock.invocationCallOrder.at(-1)).toBeLessThan(drawImage.mock.invocationCallOrder[0]);
+    expect(mockRenderer.setSize).toHaveBeenLastCalledWith(640, 480, false);
+  });
+
+  it("rejects invalid export sizes without changing the viewport", async () => {
+    await renderer.initialize(canvas, { width: 640, height: 480 });
+    mockRenderer.setSize.mockClear();
+    await expect(renderer.snapshot({ width: 0 })).rejects.toMatchObject({ code: "SNAPSHOT_FAILED" });
+    expect(mockRenderer.setSize).not.toHaveBeenCalled();
+  });
+
+  it("disposes a late parsed GLB after destroy without attaching it", async () => {
+    await renderer.initialize(canvas, { width: 640, height: 480 });
+    let finish!: (value: { scene: typeof mockGltfScene }) => void;
+    const loader = (renderer as any).gltfLoader;
+    loader.loadAsync.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    const pending = renderer.loadGlasses(makeManifest());
+    renderer.dispose();
+    mockScene.add.mockClear();
+    finish({ scene: mockGltfScene });
+    await expect(pending).rejects.toMatchObject({ code: "GLASSES_LOAD_FAILED" });
+    expect(mockScene.add).not.toHaveBeenCalled();
+    expect(mockGeometry.dispose).toHaveBeenCalledTimes(1);
+    expect(mockMaterial.dispose).toHaveBeenCalledTimes(1);
+    expect(renderer.currentGlassesAsset).toBeNull();
+  });
+
+  it("keeps the previous asset and GPU model when a replacement fails", async () => {
+    await renderer.initialize(canvas, { width: 640, height: 480 });
+    const first = makeManifest();
+    await renderer.loadGlasses(first);
+    const loader = (renderer as any).gltfLoader;
+    loader.loadAsync.mockRejectedValue(new Error("404"));
+    vi.spyOn(renderer as any, "delay").mockResolvedValue(undefined);
+    await expect(renderer.loadGlasses(makeManifest({ id: "missing" })))
+      .rejects.toMatchObject({ code: "GLASSES_LOAD_FAILED" });
+    expect(renderer.currentGlassesAsset).toBe(first);
+    expect(mockScene.remove).not.toHaveBeenCalled();
+    expect(mockGeometry.dispose).not.toHaveBeenCalled();
+    expect(mockMaterial.dispose).not.toHaveBeenCalled();
   });
 
   it("throws SNAPSHOT_FAILED when not initialized", async () => {

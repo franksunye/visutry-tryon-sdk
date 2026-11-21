@@ -57,7 +57,7 @@ export class GlassesPoseSolver {
   solve(input: GlassesPoseSolverInput): GlassesPose {
     const { face, asset, config } = input;
     const cfg = { ...DEFAULT_FITTING_CONFIG, ...config };
-    const aspect = this.deriveAspect(face);
+    const aspect = this.deriveAspect(face, input.frameSize);
 
     const sem = face.landmarks.semantic;
 
@@ -330,10 +330,14 @@ export class GlassesPoseSolver {
 
   // -----------------------------------------------------------------------
 
-  private deriveAspect(face: NormalizedFaceResult): number {
-    // Without an explicit frame size we fall back to a 4:3 aspect, which is the
-    // default camera resolution. The web adapter passes the real aspect via the
-    // renderer setup; the solver stays robust to a missing value.
+  private deriveAspect(face: NormalizedFaceResult, frameSize?: GlassesPoseSolverInput["frameSize"]): number {
+    if (frameSize && Number.isFinite(frameSize.width) && Number.isFinite(frameSize.height)
+      && frameSize.width > 0 && frameSize.height > 0) {
+      return frameSize.width / frameSize.height;
+    }
+    // Retain the legacy fallback for consumers that have not yet supplied the
+    // source size. A face bounding box is not the source image aspect ratio;
+    // adapters should provide frameSize to align normalized x coordinates.
     const b = face.bbox;
     if (b.width > 0 && b.height > 0) {
       return b.width / b.height;

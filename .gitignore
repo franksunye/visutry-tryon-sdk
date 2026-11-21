@@ -43,3 +43,10 @@ examples/*/.vite/
 
 # WeChat mini program
 examples/wechat-demo/miniprogram_npm/
+
+# Generated demo runtime and browser evidence
+examples/web-demo/public/mediapipe/
+examples/web-demo/e2e/fixtures/*.y4m
+playwright-report/
+test-results/
+examples/web-demo/e2e/fixtures/astronaut.png

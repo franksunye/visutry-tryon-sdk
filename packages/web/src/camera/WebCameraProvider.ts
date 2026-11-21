@@ -4,7 +4,8 @@ import { createSDKError, t } from "@visutry/tryon-core";
 /**
  * Web camera provider backed by `navigator.mediaDevices.getUserMedia`.
  *
- * The provider owns a hidden `<video>` element used as the live frame source.
+ * The provider uses the supplied video element, or owns a hidden one, as the
+ * live frame source. The same stream drives the preview and face tracker.
  * `getCurrentFrame()` returns that video element (wrapped as a `FrameInput`)
  * which the tracker samples with `detectForVideo`.
  */
@@ -22,11 +23,22 @@ export class WebCameraProvider implements ICameraProvider {
     mirror: true,
   };
   private running = false;
+  private startPromise: Promise<void> | null = null;
+  private streamGeneration = 0;
+
+  constructor(private readonly videoTarget?: HTMLVideoElement | string) {}
 
   async initialize(config?: CameraConfig): Promise<void> {
+    this.assertNotDisposed();
     if (config) this.config = { ...this.config, ...config };
     if (!this.video) {
-      this.video = document.createElement("video");
+      const target = typeof this.videoTarget === "string"
+        ? document.querySelector(this.videoTarget)
+        : this.videoTarget;
+      if (this.videoTarget !== undefined && !(target instanceof HTMLVideoElement)) {
+        throw createSDKError("CAMERA_NOT_AVAILABLE", "Camera preview target must be a video element");
+      }
+      this.video = (target as HTMLVideoElement | undefined) ?? document.createElement("video");
       this.video.autoplay = true;
       this.video.playsInline = true;
       this.video.muted = true;
@@ -34,17 +46,30 @@ export class WebCameraProvider implements ICameraProvider {
   }
 
   async start(): Promise<void> {
+    this.assertNotDisposed();
     if (!this.video) {
       throw createSDKError("CAMERA_NOT_AVAILABLE", t("error.camera_not_initialized"));
     }
     if (this.running) return;
+    if (this.startPromise) return this.startPromise;
 
     if (!navigator.mediaDevices?.getUserMedia) {
       throw createSDKError("UNSUPPORTED_PLATFORM", t("error.camera_unsupported"));
     }
 
+    const pending = this.acquireStream(this.video, this.streamGeneration);
+    this.startPromise = pending;
     try {
-      this.stream = await navigator.mediaDevices.getUserMedia({
+      await pending;
+    } finally {
+      if (this.startPromise === pending) this.startPromise = null;
+    }
+  }
+
+  private async acquireStream(video: HTMLVideoElement, generation: number): Promise<void> {
+    let acquired: MediaStream | null = null;
+    try {
+      acquired = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: this.config.facingMode,
           width: { ideal: this.config.width },
@@ -53,16 +78,32 @@ export class WebCameraProvider implements ICameraProvider {
         },
         audio: false,
       });
-      this.video.srcObject = this.stream;
-      await this.video.play();
+      this.assertCurrentStart(generation);
+      this.stream = acquired;
+      video.srcObject = acquired;
+      await video.play();
+      this.assertCurrentStart(generation);
       this.running = true;
       this.attachTrackListeners();
     } catch (err) {
+      // getUserMedia and play() are asynchronous. A stop/destroy can occur
+      // while either is pending; never let a late stream revive the camera.
+      if (acquired) {
+        for (const track of acquired.getTracks()) track.stop();
+        if (video.srcObject === acquired) video.srcObject = null;
+      }
+      if (this.stream === acquired) {
+        this.detachTrackListeners();
+        this.stream = null;
+        this.running = false;
+      }
       throw this.toSDKError(err);
     }
   }
 
   stop(): void {
+    this.streamGeneration++;
+    this.startPromise = null;
     this.running = false;
     this.detachTrackListeners();
     if (this.stream) {
@@ -116,6 +157,18 @@ export class WebCameraProvider implements ICameraProvider {
     return this.config.mirror;
   }
 
+  private assertNotDisposed(): void {
+    if (this.disposed) {
+      throw createSDKError("CAMERA_NOT_AVAILABLE", "Camera provider has been destroyed");
+    }
+  }
+
+  private assertCurrentStart(generation: number): void {
+    if (this.disposed || generation !== this.streamGeneration) {
+      throw createSDKError("CAMERA_NOT_AVAILABLE", "Camera start was cancelled");
+    }
+  }
+
   // -----------------------------------------------------------------------
 
   private attachTrackListeners(): void {
@@ -149,6 +202,9 @@ export class WebCameraProvider implements ICameraProvider {
   }
 
   private toSDKError(err: unknown): SDKError {
+    if (err && typeof err === "object" && "code" in err && "recoverable" in err) {
+      return err as SDKError;
+    }
     const e = err as DOMException;
     if (e?.name === "NotAllowedError" || e?.name === "SecurityError") {
       return createSDKError("CAMERA_PERMISSION_DENIED", t("error.camera_permission_denied"), err);

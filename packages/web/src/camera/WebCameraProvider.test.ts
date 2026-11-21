@@ -219,4 +219,98 @@ describe("WebCameraProvider", () => {
     await provider.start(); // should not throw or re-acquire stream
     expect(provider.isRunning).toBe(true);
   });
+
+  it("uses the supplied preview video as the tracking frame source", async () => {
+    const video = document.createElement("video");
+    Object.defineProperty(video, "readyState", { value: 4 });
+    vi.spyOn(video, "play").mockResolvedValue(undefined);
+    const stream = makeMockStream();
+    Object.defineProperty(navigator, "mediaDevices", {
+      value: { getUserMedia: vi.fn().mockResolvedValue(stream) }, configurable: true,
+    });
+    provider = new WebCameraProvider(video);
+    await provider.initialize();
+    await provider.start();
+    expect(video.srcObject).toBe(stream);
+    expect(provider.getCurrentFrame()).toMatchObject({ el: video });
+    provider.destroy();
+    expect(video.srcObject).toBeNull();
+    expect(stream.getTracks()[0].stop).toHaveBeenCalled();
+  });
+
+  it("rejects an invalid preview selector before acquiring a camera", async () => {
+    provider = new WebCameraProvider("#missing-preview");
+    await expect(provider.initialize()).rejects.toMatchObject({ code: "CAMERA_NOT_AVAILABLE" });
+  });
+
+  it("releases the acquired stream when video playback fails", async () => {
+    await provider.initialize();
+    const stream = makeMockStream();
+    const video = makeMockVideo();
+    vi.mocked(video.play).mockRejectedValue(new DOMException("Playback denied", "NotAllowedError"));
+    injectMockVideo(provider, video);
+    Object.defineProperty(navigator, "mediaDevices", {
+      value: { getUserMedia: vi.fn().mockResolvedValue(stream) }, configurable: true,
+    });
+    await expect(provider.start()).rejects.toMatchObject({ code: "CAMERA_PERMISSION_DENIED" });
+    expect(stream.getTracks()[0].stop).toHaveBeenCalled();
+    expect(video.srcObject).toBeNull();
+    expect(provider.isRunning).toBe(false);
+  });
+
+  it("stops a late permission result after destroy without attaching it", async () => {
+    await provider.initialize();
+    const video = makeMockVideo();
+    injectMockVideo(provider, video);
+    let resolve!: (stream: MediaStream) => void;
+    Object.defineProperty(navigator, "mediaDevices", {
+      value: { getUserMedia: vi.fn(() => new Promise<MediaStream>((done) => { resolve = done; })) },
+      configurable: true,
+    });
+    const pending = provider.start();
+    provider.destroy();
+    const stream = makeMockStream();
+    resolve(stream);
+    await expect(pending).rejects.toMatchObject({ code: "CAMERA_NOT_AVAILABLE" });
+    expect(stream.getTracks()[0].stop).toHaveBeenCalled();
+    expect(video.play).not.toHaveBeenCalled();
+    expect(video.srcObject).toBeNull();
+    expect(provider.isRunning).toBe(false);
+  });
+
+  it("shares a pending camera start instead of requesting two streams", async () => {
+    await provider.initialize();
+    injectMockVideo(provider, makeMockVideo());
+    let resolve!: (stream: MediaStream) => void;
+    const getUserMedia = vi.fn(() => new Promise<MediaStream>((done) => { resolve = done; }));
+    Object.defineProperty(navigator, "mediaDevices", { value: { getUserMedia }, configurable: true });
+    const first = provider.start();
+    const second = provider.start();
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    resolve(makeMockStream());
+    await Promise.all([first, second]);
+    expect(provider.isRunning).toBe(true);
+  });
+
+  it("does not let an old cancelled request stop a newer stream", async () => {
+    await provider.initialize();
+    const video = makeMockVideo();
+    injectMockVideo(provider, video);
+    let resolveOld!: (stream: MediaStream) => void;
+    const current = makeMockStream();
+    const getUserMedia = vi.fn()
+      .mockImplementationOnce(() => new Promise<MediaStream>((done) => { resolveOld = done; }))
+      .mockResolvedValueOnce(current);
+    Object.defineProperty(navigator, "mediaDevices", { value: { getUserMedia }, configurable: true });
+    const oldStart = provider.start();
+    provider.stop();
+    await provider.start();
+    const oldStream = makeMockStream();
+    resolveOld(oldStream);
+    await expect(oldStart).rejects.toMatchObject({ code: "CAMERA_NOT_AVAILABLE" });
+    expect(oldStream.getTracks()[0].stop).toHaveBeenCalled();
+    expect(current.getTracks()[0].stop).not.toHaveBeenCalled();
+    expect(video.srcObject).toBe(current);
+    expect(provider.isRunning).toBe(true);
+  });
 });

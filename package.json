@@ -2,7 +2,7 @@
   "name": "visutry-tryon-sdk",
   "version": "0.2.0",
   "private": true,
-  "description": "VisuTry Face Geometry & AR Glasses Try-On SDK — H5 / WeChat Mini Program. On-device face shape analysis and real-time AR glasses try-on.",
+  "description": "VisuTry Face Geometry & AR Glasses Try-On SDK \u2014 H5 / WeChat Mini Program. On-device face shape analysis and real-time AR glasses try-on.",
   "license": "MIT",
   "author": "VisuTry",
   "homepage": "https://github.com/franksunye/visutry-tryon-sdk#readme",
@@ -49,11 +49,15 @@
     "format": "prettier --write \"**/*.{ts,js,json,md,html,css}\"",
     "typecheck": "pnpm -r --filter=./packages/* run typecheck",
     "clean": "pnpm -r exec rimraf dist coverage .tsbuildinfo",
-    "demo:web": "pnpm --filter ./examples/web-demo run dev",
+    "demo:web": "pnpm demo:prepare && pnpm --filter visutry-web-demo dev",
     "docs:api": "typedoc",
     "changeset": "changeset",
     "version": "changeset version",
-    "release": "pnpm build && changeset publish"
+    "release": "pnpm build && changeset publish",
+    "demo:prepare": "node scripts/generate-reference-glasses.mjs --check && node scripts/prepare-demo-runtime.mjs",
+    "demo:build": "pnpm demo:prepare && pnpm build && pnpm --filter visutry-web-demo build",
+    "demo:test": "pnpm --filter visutry-web-demo test:e2e",
+    "demo:fixture": "node scripts/prepare-demo-fixture.mjs"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.9",

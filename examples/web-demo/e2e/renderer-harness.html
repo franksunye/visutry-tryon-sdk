@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Reference renderer verification</title>
+    <style>
+      body { margin: 24px; color: #17324b; background: #eef2f6; font: 16px system-ui, sans-serif; }
+      canvas { display: block; width: 800px; height: 600px; background: white; }
+      pre { white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <h1>Reference renderer verification</h1>
+    <canvas id="renderer-canvas" width="800" height="600"></canvas>
+    <pre id="renderer-result" data-state="loading">Loading the real GLB and WebGL renderer…</pre>
+    <script type="module" src="./renderer-harness.ts"></script>
+  </body>
+</html>
